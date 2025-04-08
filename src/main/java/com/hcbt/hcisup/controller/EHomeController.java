@@ -24,12 +24,13 @@ public class EHomeController {
      * 根据摄像头编号开始推流
      */
     @PostMapping("startPushStream")
-    public AjaxResult startPushStream(@RequestParam("luserId") Integer luserId){
+    public AjaxResult startPushStream(@RequestParam("luserId") Integer luserId,
+                                      @RequestParam("channel") Integer channel){
 
         CompletableFuture<String> completableFuture = new CompletableFuture<>();
 
         try {
-            sms.RealPlay(luserId,completableFuture);
+            sms.RealPlay(luserId,channel,completableFuture);
         }catch (Exception e){
             return AjaxResult.error();
         }
