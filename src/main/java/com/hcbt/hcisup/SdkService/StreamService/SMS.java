@@ -383,7 +383,7 @@ public class SMS {
      *
      * @param luserID 预览通道号
      */
-    public void RealPlay(int luserID,CompletableFuture<String> completableFutureOne) {
+    public void RealPlay(int luserID,int channel, CompletableFuture<String> completableFutureOne) {
 
         //判断是否正在推流
         List<Integer> luserIdList = new ArrayList<>(LuserIDandSessionMap.keySet());
@@ -395,7 +395,7 @@ public class SMS {
         }
 
         HCISUPCMS.NET_EHOME_PREVIEWINFO_IN struPreviewIn = new HCISUPCMS.NET_EHOME_PREVIEWINFO_IN();
-        struPreviewIn.iChannel = 1; //通道号
+        struPreviewIn.iChannel = channel; //通道号
         struPreviewIn.dwLinkMode = 0; //0- TCP方式，1- UDP方式
         struPreviewIn.dwStreamType = 0; //码流类型：0- 主码流，1- 子码流, 2- 第三码流
         struPreviewIn.struStreamSever.szIP =ehomePuIp.getBytes(); ;//流媒体服务器IP地址,公网地址

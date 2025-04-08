@@ -27,6 +27,7 @@ public class WebSocket{
     //实例一个session，这个session是websocket的session
     private Session session;
     private Integer userId;
+    private Integer channel;
 
     private static final CopyOnWriteArraySet<WebSocket> webSocketSet = new CopyOnWriteArraySet<>();
     private static final ConcurrentHashMap<Integer, Integer> LUserIdCount = new ConcurrentHashMap<>();
@@ -47,79 +48,33 @@ public class WebSocket{
     //前端请求时一个websocket时
     @OnOpen
     public void onOpen(Session session, @PathParam("userId") Integer userId) {
-        //加锁
         addLock(userId);
         this.session = session;
         this.userId = userId;
         try {
             webSocketSet.add(this);
-            log.info("【websocket消息】有新的连接{}, 总数:{}", userId,webSocketSet.size());
-            if(LUserIdCount.get(userId) == null || LUserIdCount.get(userId) <= 0){
-                //开始取流
-                Map<String,String> map = new HashMap<>();
-                map.put("luserId", String.valueOf(userId));
-                try {
-                    String res = HttpUtil.post("http://localhost:9000/startPushStream",map);
-                    Map<String,Object> map1 = JSONObject.parseObject(res);
-                    String code = map1.get("code").toString();
-                    if(code.equals("200")){
-                        LUserIdCount.put(userId, 1);
-                    }else{
-                        LUserIdCount.put(userId, 0);
-                    }
-                }catch (Exception e){
-                    log.error(e.getMessage());
-                    //出错先释放锁
-                    freedLock(userId);
-                }
-    //            CompletableFuture<String> completableFuture = new CompletableFuture<>();
-    //            sms.RealPlay(userId,completableFuture);
-    //            try {
-    //                String result = completableFuture.get();
-    //                if(Objects.equals(result, "true")){
-    //                    LUserIdCount.put(userId, 1);
-    //                }
-    //            } catch (InterruptedException | ExecutionException e) {
-    //                throw new RuntimeException(e);
-    //            }
-            }else{
-                LUserIdCount.put(userId, LUserIdCount.get(userId)+1);
-            }
-        }finally {
+            log.info("【websocket消息】有新的连接{}, 总数:{}", userId, webSocketSet.size());
+        } finally {
             freedLock(userId);
         }
     }
 
     //前端关闭时一个websocket时
     @OnClose
-    public void onClose(){
-        //加锁
+    public void onClose() {
         addLock(userId);
-        try{
+        try {
             webSocketSet.remove(this);
-        }catch (Exception e){
-            log.info("【websocket消息】异常断开");
-        }finally {
-            log.info("【websocket消息】连接断开, 总数:{}", webSocketSet.size());
-            if(LUserIdCount.get(userId) <= 1){
+            if (LUserIdCount.getOrDefault(userId, 0) <= 1) {
                 LUserIdCount.put(userId, 0);
-                //关闭取流
-                Map<String,String> map = new HashMap<>();
+                Map<String, String> map = new HashMap<>();
                 map.put("luserId", String.valueOf(userId));
-                try {
-                    HttpUtil.post("http://localhost:9000/stopPushStream",map);
-                }catch (Exception e){
-                    log.error(e.getMessage());
-                    freedLock(userId);
-                }
-//            Integer i = SMS.LuserIDandSessionMap.get(userId);
-//            if (i!=null) {
-//                sms.StopRealPlay(userId, i, SMS.SessionIDAndPreviewHandleMap.get(i));
-//                LUserIdCount.put(userId, 0);
-//            }
-            }else{
-                LUserIdCount.put(userId, LUserIdCount.get(userId)-1);
+                HttpUtil.post("http://localhost:9000/stopPushStream", map);
+            } else {
+                LUserIdCount.put(userId, LUserIdCount.get(userId) - 1);
             }
+        } finally {
+            log.info("【websocket消息】连接断开, 总数:{}", webSocketSet.size());
             freedLock(userId);
         }
     }
@@ -127,12 +82,15 @@ public class WebSocket{
     //前端向后端发送消息
     @OnMessage
     public void onMessage(String message) {
-        Integer userId;
-        Boolean ToMqtt;
-        //log.info("【websocket消息】收到客户端 {} 发来的消息",this.userId);
-        JSONObject messageJson = (JSONObject) JSONObject.parse(message);
-        userId = (Integer) messageJson.get("userId");
+        JSONObject messageJson = JSONObject.parseObject(message);
+        String commandType = messageJson.getString("t");
+        String channelName = messageJson.getString("c");
 
+        if ("open".equals(commandType) && channelName != null) {
+            this.channel = Integer.parseInt(channelName.replace("ch", ""));
+            startStream();
+        }
+        log.info("Received message: t={}, c={}", commandType, channelName);
     }
 
     @OnError
@@ -157,6 +115,24 @@ public class WebSocket{
                     log.error(e.getMessage());
                 }
             }
+        }
+    }
+
+    private void startStream() {
+        if (LUserIdCount.getOrDefault(userId, 0) <= 0) {
+            Map<String, String> map = new HashMap<>();
+            map.put("luserId", String.valueOf(userId));
+            map.put("channel", String.valueOf(channel));
+            try {
+                String res = HttpUtil.post("http://localhost:9000/startPushStream", map);
+                Map<String, Object> map1 = JSONObject.parseObject(res);
+                String code = map1.get("code").toString();
+                LUserIdCount.put(userId, "200".equals(code) ? 1 : 0);
+            } catch (Exception e) {
+                log.error(e.getMessage());
+            }
+        } else {
+            LUserIdCount.put(userId, LUserIdCount.get(userId) + 1);
         }
     }
 

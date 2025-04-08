@@ -599,7 +599,7 @@ var FlowController = function (_EventHandler) {
       if (data.websocketName != undefined) {
         let id = GetQueryString("id");
         var client = new WebSocket('ws://124.223.42.71:9000/websocket/'+id);
-        this.wfs.attachWebsocket(client, 'live3');
+        this.wfs.attachWebsocket(client, data.channelName);
       } else {
         console.log('websocketName ERROE!!!');
       }
