@@ -1,0 +1,27 @@
+
+ehome:
+  port: 9000
+  # 公网ip
+  pu-ip: 124.223.42.71
+  # 内网ip
+  in-ip: 10.0.4.2
+  # ehome5.0秘钥123456
+  secret-key: hik12345
+  # cms服务端口
+  cms-port: 7660
+  # 流媒体预览端口
+  sms-preview-port: 7662
+  # 流媒体回放端口
+  sms-back-port: 7661
+  # ss服务端口
+  ss-port: 6011
+  # ss文件保存路径
+  ss-filepath: /home/ubuntu/zlmserver/hc_isup/monitor/
+  # 回放视频存储地址
+  playBack-videoPath: /home/ubuntu/zlmserver/hc_isup/playBack_video/
+  Alarm:
+    # Alarm监听端口
+    Alarm-Tcp-port: 7663
+    Alarm-Udp-port: 7664
+    Alarm-Server-type: 2
+    EventInfoPrintType: file
