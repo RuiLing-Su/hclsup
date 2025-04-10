@@ -11,6 +11,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.HashMap;
 import java.util.List;
@@ -34,24 +35,39 @@ public class WebSocket{
     private static final ConcurrentHashMap<Integer, Boolean> userIDLock = new ConcurrentHashMap<>();
 
     //加锁
-    private void addLock(Integer userID){
+    private void addLock(Integer userID) {
+        if (userID == null) {
+            log.error("userID is null, cannot add lock");
+            return;
+        }
         if (userIDLock.containsKey(userID)) {
             while (userIDLock.get(userID)) Thread.onSpinWait();
         }
         userIDLock.put(userID, true);
     }
-    //释放锁
-    private void freedLock(Integer userID){
-        userIDLock.put(userID, false);
+
+    private void freedLock(Integer userID) {
+        if (userID != null) {
+            userIDLock.put(userID, false);
+        }
     }
 
     //前端请求时一个websocket时
     @OnOpen
     public void onOpen(Session session, @PathParam("userId") Integer userId) {
+        if (userId == null) {
+            log.error("Invalid userId (null), closing connection");
+            try {
+                session.close(new CloseReason(CloseReason.CloseCodes.CANNOT_ACCEPT, "Invalid userId"));
+            } catch (IOException e) {
+                log.error("Error closing session", e);
+            }
+            return;
+        }
         addLock(userId);
-        this.session = session;
-        this.userId = userId;
         try {
+            this.session = session;
+            this.userId = userId;
             webSocketSet.add(this);
             log.info("【websocket消息】有新的连接{}, 总数:{}", userId, webSocketSet.size());
         } finally {
@@ -62,6 +78,11 @@ public class WebSocket{
     //前端关闭时一个websocket时
     @OnClose
     public void onClose() {
+        if (userId == null) {
+            log.warn("userId is null in onClose, only removing from webSocketSet");
+            webSocketSet.remove(this);
+            return;
+        }
         addLock(userId);
         try {
             webSocketSet.remove(this);
