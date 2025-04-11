@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="utf-8" name="github" content="https://github.com/numberwolf/h265web.js">
+    <title>H.265 Video Playback</title>
+    <style>
+        .wfsjs canvas {
+            width: 960px;
+            height: 540px;
+            border: 1px solid #ccc;
+        }
+    </style>
+</head>
+<body>
+<div>
+    <label for="channelSelect">Select Channel (1-27):</label>
+    <select id="channelSelect">
+        <!-- Dynamically populate options -->
+    </select>
+    <button onclick="playSelectedChannel()">Play</button>
+    <button onclick="stopPlayback()">Stop</button>
+</div>
+
+<div class="wfsjs">
+    <div id="player-container">
+        <canvas id="videoCanvas" width="960" height="540"></canvas>
+    </div>
+</div>
+
+<script src="bundle.js"></script>
+</body>
+</html>

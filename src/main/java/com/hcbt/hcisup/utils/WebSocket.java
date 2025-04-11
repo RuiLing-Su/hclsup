@@ -1,118 +1,158 @@
 package com.hcbt.hcisup.utils;
 
 import com.alibaba.fastjson.JSONObject;
-import com.hcbt.hcisup.SdkService.StreamService.SMS;
-import com.hcbt.hcisup.common.AjaxResult;
-import jakarta.annotation.Resource;
 import jakarta.websocket.*;
 import jakarta.websocket.server.PathParam;
 import jakarta.websocket.server.ServerEndpoint;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArraySet;
 
-//注册成组件
 @Component
-@ServerEndpoint("/websocket/{userId}")
+@ServerEndpoint("/websocket/{userId}/{channel}")
 @Slf4j
-public class WebSocket{
+public class WebSocket {
 
-    //实例一个session，这个session是websocket的session
+    // WebSocket session
     private Session session;
     private Integer userId;
     private Integer channel;
 
+    // Thread-safe collections for managing connections
     private static final CopyOnWriteArraySet<WebSocket> webSocketSet = new CopyOnWriteArraySet<>();
     private static final ConcurrentHashMap<Integer, Integer> LUserIdCount = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<Integer, Boolean> userIDLock = new ConcurrentHashMap<>();
 
-    //加锁
-    private void addLock(Integer userID){
+    // Add synchronization lock
+    private void addLock(Integer userID) {
         if (userIDLock.containsKey(userID)) {
             while (userIDLock.get(userID)) Thread.onSpinWait();
         }
         userIDLock.put(userID, true);
     }
-    //释放锁
-    private void freedLock(Integer userID){
+
+    // Release synchronization lock
+    private void freedLock(Integer userID) {
         userIDLock.put(userID, false);
     }
 
-    //前端请求时一个websocket时
     @OnOpen
-    public void onOpen(Session session, @PathParam("userId") Integer userId) {
+    public void onOpen(Session session, @PathParam("userId") Integer userId, @PathParam("channel") Integer channel) {
         addLock(userId);
-        this.session = session;
-        this.userId = userId;
         try {
+            this.session = session;
+            this.userId = userId;
+            this.channel = channel;
+
+            // Configure session for binary messages
+            this.session.setMaxBinaryMessageBufferSize(1024 * 1024); // 1MB buffer
+            this.session.setMaxTextMessageBufferSize(8192);
+
+            log.info("【WebSocket】New connection: userId={}, channel={}, sessionId={}",
+                    userId, channel, session.getId());
+
             webSocketSet.add(this);
-            log.info("【websocket消息】有新的连接{}, 总数:{}", userId, webSocketSet.size());
+            log.info("【WebSocket】New connection added, total connections: {}", webSocketSet.size());
+
+            // Start streaming after connection is established
+            startStream();
+        } catch (Exception e) {
+            log.error("Error during WebSocket open: {}", e.getMessage(), e);
         } finally {
             freedLock(userId);
         }
     }
 
-    //前端关闭时一个websocket时
     @OnClose
     public void onClose() {
         addLock(userId);
         try {
             webSocketSet.remove(this);
+            log.info("【WebSocket】Connection closed: userId={}, channel={}", userId, channel);
+
+            // Decrement user count and stop stream if this is the last connection for this user
             if (LUserIdCount.getOrDefault(userId, 0) <= 1) {
                 LUserIdCount.put(userId, 0);
                 Map<String, String> map = new HashMap<>();
                 map.put("luserId", String.valueOf(userId));
-                HttpUtil.post("http://localhost:9000/stopPushStream", map);
+                try {
+                    HttpUtil.post("http://localhost:9000/stopPushStream", map);
+                    log.info("Stream stopped for userId: {}", userId);
+                } catch (Exception e) {
+                    log.error("Failed to stop stream: {}", e.getMessage());
+                }
             } else {
                 LUserIdCount.put(userId, LUserIdCount.get(userId) - 1);
+                log.info("User count decremented for userId: {}, new count: {}",
+                        userId, LUserIdCount.get(userId));
             }
         } finally {
-            log.info("【websocket消息】连接断开, 总数:{}", webSocketSet.size());
+            log.info("【WebSocket】Total connections after close: {}", webSocketSet.size());
             freedLock(userId);
         }
     }
 
-    //前端向后端发送消息
     @OnMessage
     public void onMessage(String message) {
-        JSONObject messageJson = JSONObject.parseObject(message);
-        String commandType = messageJson.getString("t");
-        String channelName = messageJson.getString("c");
+        try {
+            JSONObject messageJson = JSONObject.parseObject(message);
+            String commandType = messageJson.getString("t");
+            String channelName = messageJson.getString("c");
 
-        if ("open".equals(commandType) && channelName != null) {
-            this.channel = Integer.parseInt(channelName.replace("ch", ""));
-            startStream();
+            log.info("Received message: t={}, c={}", commandType, channelName);
+
+            if ("open".equals(commandType) && channelName != null) {
+                try {
+                    this.channel = Integer.parseInt(channelName.replace("ch", ""));
+                    startStream();
+                } catch (NumberFormatException e) {
+                    log.error("Invalid channel format: {}", channelName);
+                }
+            }
+        } catch (Exception e) {
+            log.error("Error parsing message: {}", e.getMessage());
         }
-        log.info("Received message: t={}, c={}", commandType, channelName);
     }
 
     @OnError
-    public void onError(Session session,Throwable throwable) {
-        log.info("【websocket消息】未知错误 session:{}, error:{}", session.getId(), throwable.getMessage());
-        for (WebSocket webSocket: webSocketSet) {
-            if(Objects.equals(webSocket.session, session)){
-                //找到本此连接,关闭
-                webSocket.onClose();
+    public void onError(Session session, Throwable throwable) {
+        log.error("【WebSocket】Error in session {}: {}", session.getId(), throwable.getMessage(), throwable);
+        try {
+            for (WebSocket webSocket : webSocketSet) {
+                if (Objects.equals(webSocket.session, session)) {
+                    webSocket.onClose();
+                    break;
+                }
             }
+        } catch (Exception e) {
+            log.error("Error handling WebSocket error: {}", e.getMessage());
         }
     }
 
-    //向指定用户发送消息
-    public void sendMessageForOne(byte[] message,Integer userId){
-        for (WebSocket webSocket: webSocketSet) {
-            if(Objects.equals(webSocket.userId, userId)){
+    // Send binary data to a specific user
+    public void sendMessageForOne(byte[] message, Integer userId) {
+        if (message == null || message.length == 0) {
+            return;
+        }
+
+        for (WebSocket webSocket : webSocketSet) {
+            if (Objects.equals(webSocket.userId, userId) && webSocket.session.isOpen()) {
                 try {
-                    ByteBuffer data = ByteBuffer.wrap(message);
-                    webSocket.session.getBasicRemote().sendBinary(data);
+                    ByteBuffer buffer = ByteBuffer.wrap(message);
+                    webSocket.session.getAsyncRemote().sendBinary(buffer, result -> {
+                        if (!result.isOK()) {
+                            log.error("Failed to send binary data: {}", result.getException().getMessage());
+                        }
+                    });
                 } catch (Exception e) {
-                    log.error(e.getMessage());
+                    log.error("Error sending H.265 stream data: {}", e.getMessage());
                 }
             }
         }
@@ -123,27 +163,51 @@ public class WebSocket{
             Map<String, String> map = new HashMap<>();
             map.put("luserId", String.valueOf(userId));
             map.put("channel", String.valueOf(channel));
+
             try {
                 String res = HttpUtil.post("http://localhost:9000/startPushStream", map);
-                Map<String, Object> map1 = JSONObject.parseObject(res);
-                String code = map1.get("code").toString();
-                LUserIdCount.put(userId, "200".equals(code) ? 1 : 0);
+                Map<String, Object> responseMap = JSONObject.parseObject(res);
+                String code = responseMap.get("code").toString();
+
+                if ("200".equals(code)) {
+                    LUserIdCount.put(userId, 1);
+                    log.info("Stream started successfully for userId: {}, channel: {}", userId, channel);
+                } else {
+                    LUserIdCount.put(userId, 0);
+                    log.error("Failed to start stream. Response code: {}", code);
+                    sendTextMessage("Stream initialization failed. Please try again.");
+                }
             } catch (Exception e) {
-                log.error(e.getMessage());
+                log.error("Error starting stream: {}", e.getMessage());
+                sendTextMessage("Error starting stream: " + e.getMessage());
             }
         } else {
             LUserIdCount.put(userId, LUserIdCount.get(userId) + 1);
+            log.info("User count incremented for userId: {}, new count: {}",
+                    userId, LUserIdCount.get(userId));
         }
     }
 
-    //新增一个方法用于主动向客户端发送消息
-    public void sendMessage(JSONObject message){
-        log.info("【websocket消息】广播消息, message={}", message.get("message"));
-        for (WebSocket webSocket: webSocketSet) {
+    // Send text message to this client
+    private void sendTextMessage(String message) {
+        if (session != null && session.isOpen()) {
             try {
-                webSocket.session.getBasicRemote().sendText(String.valueOf(message.get("message")));
+                session.getAsyncRemote().sendText(message);
             } catch (Exception e) {
-                log.error(e.getMessage());
+                log.error("Error sending text message: {}", e.getMessage());
+            }
+        }
+    }
+
+    // Send text message to all clients
+    public void broadcastMessage(String message) {
+        for (WebSocket webSocket : webSocketSet) {
+            try {
+                if (webSocket.session.isOpen()) {
+                    webSocket.session.getAsyncRemote().sendText(message);
+                }
+            } catch (Exception e) {
+                log.error("Error broadcasting message: {}", e.getMessage());
             }
         }
     }

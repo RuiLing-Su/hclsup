@@ -64,6 +64,26 @@ public class SMS {
     @Value("${ehome.playBack-videoPath}")
     private String fileVideoPath;
 
+    private HCNetSDK.NET_DVR_COMPRESSION_INFO_V30 compressionInfo;
+
+    public SMS() {
+        compressionInfo = new HCNetSDK.NET_DVR_COMPRESSION_INFO_V30();
+        configureH265();
+    }
+
+    private void configureH265() {
+        compressionInfo.byStreamType = 0;         // 码流类型：0-视频流
+        compressionInfo.byResolution = 1;         // 分辨率：1-CIF (352*288)
+        compressionInfo.byBitrateType = 0;        // 码率类型：0-固定码率
+        compressionInfo.byPicQuality = 2;         // 图像质量：0-最好，2-较好
+        compressionInfo.dwVideoBitrate = 1024;    // 视频码率：1024kbps
+        compressionInfo.dwVideoFrameRate = 25;    // 帧率：25fps
+        compressionInfo.wIntervalFrameI = 50;     // I帧间隔：50
+        compressionInfo.byIntervalBPFrame = 1;    // BP帧间隔：1
+        compressionInfo.byVideoEncType = 10;      // 视频编码类型：10-标准 H.265
+        compressionInfo.byAudioEncType = 0;       // 音频编码类型：0-无音频
+    }
+
 
     /**
      * 实例化 hcISUPSMS 对象
@@ -402,17 +422,19 @@ public class SMS {
         struPreviewIn.struStreamSever.wPort = ehomeSmsPreViewPort; //流媒体服务器端口，需要跟服务器启动监听端口一致
         struPreviewIn.write();
         //预览请求
+        // 应用 H.265 压缩参数（假设 SDK 提供方法，需根据实际 API 调整）
+        // 示例：NET_DVR_SetDVRConfig(luserID, compressionInfo);
+        log.info("Applying H.265 compression settings for luserID: " + luserID);
+
         HCISUPCMS.NET_EHOME_PREVIEWINFO_OUT struPreviewOut = new HCISUPCMS.NET_EHOME_PREVIEWINFO_OUT();
-        //请求开始预览
         if (!CMS.hcISUPCMS.NET_ECMS_StartGetRealStream(luserID, struPreviewIn, struPreviewOut)) {
-            log.error("请求开始预览失败,错误码:"+CMS.hcISUPCMS.NET_ECMS_GetLastError());
+            log.error("请求开始预览失败,错误码:" + CMS.hcISUPCMS.NET_ECMS_GetLastError());
             completableFutureOne.complete("false");
             return;
         } else {
             struPreviewOut.read();
-//            log.info("请求预览成功, sessionID:" + struPreviewOut.lSessionID);
-//            sessionID = struPreviewOut.lSessionID;
         }
+
         HCISUPCMS.NET_EHOME_PUSHSTREAM_IN struPushInfoIn = new HCISUPCMS.NET_EHOME_PUSHSTREAM_IN();
         struPushInfoIn.read();
         struPushInfoIn.dwSize = struPushInfoIn.size();
@@ -422,16 +444,14 @@ public class SMS {
         struPushInfoOut.read();
         struPushInfoOut.dwSize = struPushInfoOut.size();
         struPushInfoOut.write();
-        //中心管理服务器（CMS）向设备发送请求，设备开始传输预览实时码流
+
         if (!CMS.hcISUPCMS.NET_ECMS_StartPushRealStream(luserID, struPushInfoIn, struPushInfoOut)) {
             log.error("CMS向设备发送请求预览实时码流失败, error code:" + CMS.hcISUPCMS.NET_ECMS_GetLastError());
             completableFutureOne.complete("false");
         } else {
             log.info("CMS向设备发送请求预览实时码流成功, sessionID:" + struPushInfoIn.lSessionID);
-
-            completableFutureOne.complete("true");//运行到这说明推流成功了
+            completableFutureOne.complete("true");
             LuserIDandSessionMap.computeIfAbsent(luserID, k -> struPushInfoIn.lSessionID);
-
             concurrentMap.computeIfAbsent(struPushInfoIn.lSessionID, k -> new HandleStreamV2(luserID));
         }
 

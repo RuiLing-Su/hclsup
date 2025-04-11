@@ -102,7 +102,42 @@
                     <includeSystemScope>true</includeSystemScope>
                 </configuration>
             </plugin>
+
+            <!-- 添加资源压缩插件 -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-resources-plugin</artifactId>
+                <version>3.3.0</version>
+                <configuration>
+                    <nonFilteredFileExtensions>
+                        <nonFilteredFileExtension>wasm</nonFilteredFileExtension>
+                        <followSymlinks>false</followSymlinks>
+                        <nonFilteredFileExtension>mp4</nonFilteredFileExtension>
+                    </nonFilteredFileExtensions>
+                </configuration>
+            </plugin>
         </plugins>
+
+        <resources>
+            <!-- 主资源目录（排除static文件夹） -->
+            <resource>
+                <directory>src/main/resources</directory>
+                <excludes>
+                    <exclude>static/node_modules/**</exclude>
+                    <exclude>**/node_modules/**</exclude>                </excludes>
+            </resource>
+
+            <!-- 单独处理static目录（禁用过滤） -->
+            <resource>
+                <directory>src/main/resources/static</directory>
+                <filtering>false</filtering>  <!-- 禁止资源过滤 -->
+                <includes>
+                    <include>**/*.js</include>
+                    <include>**/*.wasm</include>
+                    <include>**/*.html</include>
+                </includes>
+            </resource>
+        </resources>
     </build>
 
 </project>

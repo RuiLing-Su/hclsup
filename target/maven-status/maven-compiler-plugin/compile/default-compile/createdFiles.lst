@@ -774,6 +774,7 @@ com/hcbt/hcisup/SdkService/StreamService/HCNetSDK$NET_DVR_CHECK_DEV_STATE.class
 com/hcbt/hcisup/utils/SmsClient.class
 com/hcbt/hcisup/SdkService/CmsService/HCISUPCMS$NET_EHOME_PLAYBACKMODE.class
 com/hcbt/hcisup/SdkService/StreamService/HCNetSDK$NET_DVR_ALARMOUTCFG.class
+com/hcbt/hcisup/config/WebSocketConfig$1.class
 com/hcbt/hcisup/SdkService/StreamService/HCNetSDK$NET_DVRRECEIVER.class
 com/hcbt/hcisup/SdkService/StreamService/HCNetSDK$NET_DVR_PTZTRACKCHAN_INFO.class
 com/hcbt/hcisup/SdkService/StreamService/HCNetSDK$FVoiceDataCallBack_V30.class
