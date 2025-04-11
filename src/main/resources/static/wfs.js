@@ -511,7 +511,7 @@ var BufferController = function (_EventHandler) {
               this.appending = true;
             } else {}
           } catch (err) {
-            // in case any error occured while appending, put back segment in segments table 
+            // in case any error occured while appending, put back segment in segments table
             segments.unshift(segment);
             var event = { type: ErrorTypes.MEDIA_ERROR };
             if (err.code !== 22) {
@@ -598,7 +598,7 @@ var FlowController = function (_EventHandler) {
     value: function onMediaAttached(data) {
       if (data.websocketName != undefined) {
         let id = GetQueryString("id");
-        var client = new WebSocket('ws://124.223.42.71:9000/websocket/'+id);
+        var client = new WebSocket('ws://101.132.99.208:9090/websocket/'+id);
         this.wfs.attachWebsocket(client, data.channelName);
       } else {
         console.log('websocketName ERROE!!!');
@@ -1061,7 +1061,7 @@ function _classCallCheck(instance, Constructor) { if (!(instance instanceof Cons
 function _possibleConstructorReturn(self, call) { if (!self) { throw new ReferenceError("this hasn't been initialised - super() hasn't been called"); } return call && (typeof call === "object" || typeof call === "function") ? call : self; }
 
 function _inherits(subClass, superClass) { if (typeof superClass !== "function" && superClass !== null) { throw new TypeError("Super expression must either be null or a function, not " + typeof superClass); } subClass.prototype = Object.create(superClass && superClass.prototype, { constructor: { value: subClass, enumerable: false, writable: true, configurable: true } }); if (superClass) Object.setPrototypeOf ? Object.setPrototypeOf(subClass, superClass) : subClass.__proto__ = superClass; } /**
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               
+
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                */
 
 
@@ -2309,7 +2309,7 @@ var MP4Remuxer = function () {
         this.generateVideoIS(videoTrack, timeOffset);
       }
       if (this.ISGenerated) {
-        // if (videoTrack.samples.length) { 
+        // if (videoTrack.samples.length) {
         this.remuxVideo_2(videoTrack, timeOffset, contiguous);
         // }
       }
@@ -3656,7 +3656,7 @@ var Wfs = function () {
       var channelName = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : 'chX';
       var mediaType = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : 'H264Raw';
       var websocketName = arguments.length > 3 && arguments[3] !== undefined ? arguments[3] : 'play2';
-      // 'H264Raw' 'FMp4'    
+      // 'H264Raw' 'FMp4'
       this.mediaType = mediaType;
       this.media = media;
       this.trigger(_events2.default.MEDIA_ATTACHING, { media: media, channelName: channelName, mediaType: mediaType, websocketName: websocketName });

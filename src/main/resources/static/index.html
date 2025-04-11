@@ -55,7 +55,7 @@
             wfs = new Wfs();
         }
 
-        const wsUrl = `ws://124.223.42.71:9000/websocket/${id}`;
+        const wsUrl = `ws://101.132.99.208:9090/websocket/${id}`;
         const client = new WebSocket(wsUrl);
 
         wfs.attachMedia(video1, `ch${selectedChannel}`, 'H264Raw', 'play2');
