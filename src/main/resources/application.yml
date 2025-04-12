@@ -7,9 +7,6 @@ spring:
     time-zone: GMT+8
   mvc:
     static-path-pattern: /**
-  web:
-    resources:
-      static-locations: classpath:/static/,classpath:/public/,classpath:/resources/
 
 server:
   port: ${ehome.port}
@@ -40,4 +37,21 @@ ehome:
     Alarm-Udp-port: ${ehome.Alarm.Alarm-Udp-port}
     Alarm-Server-type: ${ehome.Alarm.Alarm-Server-type}
     EventInfoPrintType: ${ehome.Alarm.EventInfoPrintType}
+
+knife4j:
+  enable: true
+  openapi:
+    title: ISUP平台接口文档
+    description: 录像、推流等接口说明
+  setting:
+    language: zh_cn
+    enable-footer: false
+    enable-footer-custom: false
+    enable-version: true
+    enable-openapi: true
+    swagger-model-name: 接口文档
+    # 是否显示请求耗时
+    enable-request-time: true
+    # 是否显示界面中各类分组
+    enable-group: true
 
