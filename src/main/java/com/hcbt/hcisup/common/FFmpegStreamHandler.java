@@ -2,224 +2,190 @@ package com.hcbt.hcisup.common;
 
 import lombok.extern.slf4j.Slf4j;
 
-import java.io.OutputStream;
-import java.io.IOException;
 import java.io.BufferedReader;
+import java.io.IOException;
 import java.io.InputStreamReader;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 
+/**
+ * FFmpeg 流处理器
+ * 用于管理 FFmpeg 进程，将视频数据推送到指定的 SRT 或 RTMP URL
+ */
 @Slf4j
 public class FFmpegStreamHandler {
 
-    private static ConcurrentHashMap<Integer, Process> ffmpegProcesses = new ConcurrentHashMap<>();
-    private static ConcurrentHashMap<Integer, OutputStream> ffmpegOutputStreams = new ConcurrentHashMap<>();
-    private static ConcurrentHashMap<Integer, AtomicBoolean> runningFlags = new ConcurrentHashMap<>();
-    private static ConcurrentHashMap<Integer, String> rtmpUrls = new ConcurrentHashMap<>();
+    // 存储用户对应的 FFmpeg 进程
+    private static final ConcurrentHashMap<Integer, Process> ffmpegProcesses = new ConcurrentHashMap<>();
+    // 存储 FFmpeg 进程的标准输入流
+    private static final ConcurrentHashMap<Integer, OutputStream> ffmpegOutputStreams = new ConcurrentHashMap<>();
+    // 标记 FFmpeg 进程是否正在运行
+    private static final ConcurrentHashMap<Integer, AtomicBoolean> runningFlags = new ConcurrentHashMap<>();
+    // 保存每个用户的目标 URL 用于重启
+    private static final ConcurrentHashMap<Integer, String> rtmpUrls = new ConcurrentHashMap<>();
+    // 最大重启尝试次数
     private static final int MAX_RESTART_ATTEMPTS = 3;
-    private static ConcurrentHashMap<Integer, Integer> restartAttempts = new ConcurrentHashMap<>();
+    // 记录每个用户的重启次数
+    private static final ConcurrentHashMap<Integer, Integer> restartAttempts = new ConcurrentHashMap<>();
 
     /**
-     * Start an FFmpeg process for a specific user ID
+     * 启动 FFmpeg 进程
      *
-     * @param luserId User ID
-     * @param srtUrl Target srtUrl URL to push stream to
-     * @return true if started successfully
+     * @param luserId 用户 ID
+     * @param srtUrl  目标 SRT URL
+     * @return 是否成功启动
      */
     public static boolean startFFmpeg(Integer luserId, String srtUrl) {
-        log.info("Attempting to start FFmpeg for user ID: {} with SRT URL: {}", luserId, srtUrl);
+        log.info("尝试为用户 ID: {} 启动 FFmpeg，目标 URL: {}", luserId, srtUrl);
 
-        // Check if FFmpeg is installed
-        try {
-            Process checkProcess = new ProcessBuilder("ffmpeg", "-version").start();
-            int exitCode = checkProcess.waitFor();
-            if (exitCode != 0) {
-                log.error("FFmpeg is not properly installed or accessible");
-                return false;
-            }
-        } catch (Exception e) {
-            log.error("FFmpeg check failed: {}", e.getMessage());
+        // 检查 FFmpeg 是否可用
+        if (!isFFmpegInstalled()) {
+            log.error("FFmpeg 未安装或无法访问");
             return false;
         }
 
+        // 执行进程启动逻辑
+        return startFFmpegProcess(luserId, srtUrl);
+    }
+
+    /**
+     * 检查 FFmpeg 是否已安装
+     *
+     * @return FFmpeg 是否可用
+     */
+    private static boolean isFFmpegInstalled() {
         try {
-            // Build FFmpeg command for RTSP with H.265
-            ProcessBuilder pb = new ProcessBuilder(
-                    "ffmpeg",
-                    "-f", "hevc",               // 输入格式为H.265裸流
-                    "-i", "pipe:0",            // 从标准输入读取数据
-                    "-c:v", "copy",            // 视频流直接复制，不重新编码
-                    "-an",                     // 无音频
-                    "-f", "mpegts",            // 输出格式为MPEG-TS（SRT要求）
-                    "-mpegts_service_type", "0x1", // 设置服务类型
-                    "-mpegts_pmt_start_pid", "100", // PMT PID
-                    "-mpegts_start_pid", "101",     // 流起始PID
-                    srtUrl                     // 输出SRT URL，例如 srt://127.0.0.1:10080?streamid=publish/live/stream1
-            );
-            log.info("Starting FFmpeg process with command: " + pb.command());
+            Process checkProcess = new ProcessBuilder("ffmpeg", "-version").start();
+            int exitCode = checkProcess.waitFor();
+            return exitCode == 0;
+        } catch (Exception e) {
+            log.error("检查 FFmpeg 失败: {}", e.getMessage());
+            return false;
+        }
+    }
 
+    /**
+     * 启动 FFmpeg 进程的核心逻辑
+     *
+     * @param luserId 用户 ID
+     * @param rtmpUrl 目标 URL
+     * @return 是否成功启动
+     */
+    private static boolean startFFmpegProcess(Integer luserId, String rtmpUrl) {
+        // 停止已有的进程
+        stopExistingProcess(luserId);
+
+        try {
+            // 构建 FFmpeg 命令
+            List<String> command = buildFFmpegCommand(rtmpUrl);
+            ProcessBuilder pb = new ProcessBuilder(command);
             pb.redirectErrorStream(true); // 合并标准错误和标准输出
+            log.info("启动 FFmpeg 进程，命令: {}", command);
 
-            // Start FFmpeg process
+            // 启动进程
             Process process = pb.start();
             ffmpegProcesses.put(luserId, process);
 
-            // Get the process input stream (from Java's perspective, this is the output stream)
+            // 获取标准输入流
             OutputStream outputStream = process.getOutputStream();
             ffmpegOutputStreams.put(luserId, outputStream);
 
+            // 获取 FFmpeg 输出流
             final var inputStream = process.getInputStream();
 
-            // Start a thread to log FFmpeg output
-            new Thread(() -> {
-                try {
-                    byte[] buffer = new byte[1024];
-                    int length;
-                    while (ffmpegProcesses.containsKey(luserId) &&
-                            (length = inputStream.read(buffer)) != -1) {
-                        log.debug("FFmpeg output: {}", new String(buffer, 0, length));
-                    }
-                } catch (IOException e) {
-                    if (ffmpegProcesses.containsKey(luserId)) {
-                        log.error("Error reading FFmpeg output", e);
-                    } else {
-                        log.debug("FFmpeg stream closed for user: {}", luserId);
-                    }
-                }
-            }).start();
+            // 启动线程记录 FFmpeg 输出日志
+            new Thread(() -> logFFmpegOutput(luserId, inputStream)).start();
 
-            // Add process status monitoring thread
-            new Thread(() -> {
-                try {
-                    int exitCode = process.waitFor();
-                    log.info("FFmpeg process exited for user ID: {} with code: {}", luserId, exitCode);
-                    if (ffmpegProcesses.containsKey(luserId)) {
-                        stopFFmpeg(luserId);
-                    }
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    log.error("Process monitoring interrupted for user ID: {}", luserId);
-                }
-            }).start();
+            // 启动线程监控进程状态
+            new Thread(() -> monitorProcessStatus(luserId, process)).start();
 
-            // 记录SRT URL以便重启
-            rtmpUrls.put(luserId, srtUrl);
+            // 初始化运行状态
+            rtmpUrls.put(luserId, rtmpUrl);
             runningFlags.put(luserId, new AtomicBoolean(true));
             restartAttempts.put(luserId, 0);
 
             return true;
         } catch (IOException e) {
-            log.error("Failed to start FFmpeg for user ID: " + luserId, e);
+            log.error("启动 FFmpeg 进程失败，用户 ID: {}", luserId, e);
             return false;
         }
     }
 
     /**
-     * Internal method to start the FFmpeg process
+     * 构建 FFmpeg 命令
+     *
+     * @param rtmpUrl 目标 URL
+     * @return FFmpeg 命令列表
      */
-    private static boolean startFFmpegProcess(Integer luserId, String rtmpUrl) {
-        // Check if FFmpeg is available
-        try {
-            Process checkProcess = new ProcessBuilder("ffmpeg", "-version").start();
-            int exitCode = checkProcess.waitFor();
-            if (exitCode != 0) {
-                log.error("FFmpeg is not properly installed or accessible");
-                return false;
+    private static List<String> buildFFmpegCommand(String rtmpUrl) {
+        List<String> command = new ArrayList<>();
+        command.add("ffmpeg");
+        command.add("-f");
+        command.add("hevc"); // 输入格式为 H.265 裸流
+        command.add("-i");
+        command.add("pipe:0"); // 从标准输入读取数据
+        command.add("-c:v");
+        command.add("copy"); // 视频流直接复制，不重新编码
+        command.add("-an"); // 无音频
+        command.add("-f");
+        command.add("mpegts"); // 输出格式为 MPEG-TS（适用于 SRT）
+        command.add("-mpegts_service_type");
+        command.add("0x1"); // 设置服务类型
+        command.add("-mpegts_pmt_start_pid");
+        command.add("100"); // PMT PID
+        command.add("-mpegts_start_pid");
+        command.add("101"); // 流起始 PID
+        command.add(rtmpUrl); // 目标 URL
+        return command;
+    }
+
+    /**
+     * 记录 FFmpeg 的输出日志
+     *
+     * @param luserId     用户 ID
+     * @param inputStream FFmpeg 输出流
+     */
+    private static void logFFmpegOutput(Integer luserId, java.io.InputStream inputStream) {
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream))) {
+            String line;
+            while ((line = reader.readLine()) != null && runningFlags.getOrDefault(luserId, new AtomicBoolean(false)).get()) {
+                log.debug("FFmpeg 输出 [用户 ID: {}]: {}", luserId, line);
             }
-        } catch (Exception e) {
-            log.error("FFmpeg check failed: " + e.getMessage());
-            return false;
-        }
-
-        // Stop existing process if any
-        stopExistingProcess(luserId);
-
-        try {
-            // Build FFmpeg command with more robust options
-            List<String> command = new ArrayList<>();
-            command.add("ffmpeg");
-            command.add("-f");
-            command.add("h264"); // Try h264 instead of hevc if your streams are H.264
-            command.add("-i");
-            command.add("pipe:0");
-            command.add("-c:v");
-            command.add("copy");
-            command.add("-f");
-            command.add("flv"); // Using flv format for RTMP is more common
-            command.add("-flvflags");
-            command.add("no_duration_filesize");
-            command.add("-fflags");
-            command.add("nobuffer");
-            command.add("-flags");
-            command.add("low_delay");
-            command.add(rtmpUrl);
-
-            ProcessBuilder pb = new ProcessBuilder(command);
-            log.info("Starting FFmpeg process with command: {}", pb.command());
-
-            pb.redirectErrorStream(true);
-
-            Process process = pb.start();
-            ffmpegProcesses.put(luserId, process);
-
-            OutputStream outputStream = process.getOutputStream();
-            ffmpegOutputStreams.put(luserId, outputStream);
-
-            final var inputStream = process.getInputStream();
-
-            // Log FFmpeg output for debugging
-            new Thread(() -> {
-                try (BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream))) {
-                    String line;
-                    while ((line = reader.readLine()) != null && runningFlags.getOrDefault(luserId, new AtomicBoolean(false)).get()) {
-                        log.debug("FFmpeg output [{}]: {}", luserId, line);
-                    }
-                } catch (IOException e) {
-                    if (runningFlags.getOrDefault(luserId, new AtomicBoolean(false)).get()) {
-                        log.error("Error reading FFmpeg output", e);
-                    }
-                }
-            }).start();
-
-            // Monitor process status
-            new Thread(() -> {
-                try {
-                    int exitCode = process.waitFor();
-                    log.info("FFmpeg process exited for user ID: {} with code: {}", luserId, exitCode);
-
-                    if (runningFlags.getOrDefault(luserId, new AtomicBoolean(false)).get()) {
-                        // Process terminated unexpectedly, try to restart if allowed
-                        int attempts = restartAttempts.getOrDefault(luserId, 0);
-                        if (attempts < MAX_RESTART_ATTEMPTS) {
-                            log.warn("Attempting to restart FFmpeg for user ID: {} (attempt {}/{})",
-                                    luserId, attempts + 1, MAX_RESTART_ATTEMPTS);
-                            restartAttempts.put(luserId, attempts + 1);
-                            String savedUrl = rtmpUrls.get(luserId);
-                            if (savedUrl != null) {
-                                startFFmpegProcess(luserId, savedUrl);
-                            }
-                        } else {
-                            log.error("Maximum restart attempts reached for user ID: {}", luserId);
-                            runningFlags.put(luserId, new AtomicBoolean(false));
-                        }
-                    }
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    log.error("Process monitoring interrupted for user ID: {}", luserId);
-                }
-            }).start();
-
-            return true;
         } catch (IOException e) {
-            log.error("Failed to start FFmpeg for user ID: " + luserId, e);
-            return false;
+            if (runningFlags.getOrDefault(luserId, new AtomicBoolean(false)).get()) {
+                log.error("读取 FFmpeg 输出失败，用户 ID: {}", luserId, e);
+            }
         }
     }
 
     /**
-     * Stop existing FFmpeg process if running
+     * 监控 FFmpeg 进程状态并处理意外退出
+     *
+     * @param luserId 用户 ID
+     * @param process FFmpeg 进程
+     */
+    private static void monitorProcessStatus(Integer luserId, Process process) {
+        try {
+            int exitCode = process.waitFor();
+            log.info("FFmpeg 进程退出，用户 ID: {}，退出码: {}", luserId, exitCode);
+
+            // 如果进程意外退出且仍在运行状态，尝试重启
+            if (runningFlags.getOrDefault(luserId, new AtomicBoolean(false)).get()) {
+                restartProcess(luserId);
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.error("进程监控被中断，用户 ID: {}", luserId);
+        }
+    }
+
+    /**
+     * 停止现有的 FFmpeg 进程
+     *
+     * @param luserId 用户 ID
      */
     private static void stopExistingProcess(Integer luserId) {
         Process oldProcess = ffmpegProcesses.remove(luserId);
@@ -229,35 +195,35 @@ public class FFmpegStreamHandler {
             try {
                 oldOutputStream.close();
             } catch (IOException e) {
-                log.error("Failed to close old FFmpeg output stream for user ID: {}", luserId, e);
+                log.error("关闭旧 FFmpeg 输出流失败，用户 ID: {}", luserId, e);
             }
         }
 
         if (oldProcess != null) {
             try {
                 oldProcess.destroyForcibly().waitFor();
-                log.info("Old FFmpeg process terminated for user ID: {}", luserId);
+                log.info("旧 FFmpeg 进程已终止，用户 ID: {}", luserId);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                log.error("Interrupted while waiting for old process termination: {}", luserId);
+                log.error("等待旧进程终止时被中断，用户 ID: {}", luserId);
             }
         }
     }
 
     /**
-     * Write video data to FFmpeg stdin
+     * 将视频数据写入 FFmpeg 进程的标准输入
      *
-     * @param luserId User ID
-     * @param data Video data
+     * @param luserId 用户 ID
+     * @param data    视频数据
      */
     public static void writeData(Integer luserId, byte[] data) {
         if (!isProcessAlive(luserId)) {
-            log.warn("Cannot write data - FFmpeg process for user {} is not running", luserId);
+            log.warn("无法写入数据，用户 ID: {} 的 FFmpeg 进程未运行", luserId);
             return;
         }
 
         if (data.length < 10) {
-            log.warn("Data too small for user {}, possibly invalid: {} bytes", luserId, data.length);
+            log.warn("数据太小，用户 ID: {}，可能是无效数据: {} 字节", luserId, data.length);
             return;
         }
 
@@ -267,15 +233,16 @@ public class FFmpegStreamHandler {
                 outputStream.write(data);
                 outputStream.flush();
             } catch (IOException e) {
-                log.error("Failed to write data to FFmpeg for user ID: " + luserId, e);
-                // Consider restarting the process here
+                log.error("写入数据到 FFmpeg 失败，用户 ID: {}", luserId, e);
                 restartProcess(luserId);
             }
         }
     }
 
     /**
-     * Attempt to restart a failed process
+     * 尝试重启 FFmpeg 进程
+     *
+     * @param luserId 用户 ID
      */
     private static void restartProcess(Integer luserId) {
         if (!runningFlags.getOrDefault(luserId, new AtomicBoolean(false)).get()) {
@@ -284,26 +251,24 @@ public class FFmpegStreamHandler {
 
         int attempts = restartAttempts.getOrDefault(luserId, 0);
         if (attempts < MAX_RESTART_ATTEMPTS) {
-            log.warn("Attempting to restart FFmpeg after write error for user ID: {} (attempt {}/{})",
-                    luserId, attempts + 1, MAX_RESTART_ATTEMPTS);
+            log.warn("尝试重启 FFmpeg，用户 ID: {} (第 {}/{} 次)", luserId, attempts + 1, MAX_RESTART_ATTEMPTS);
             restartAttempts.put(luserId, attempts + 1);
             String savedUrl = rtmpUrls.get(luserId);
             if (savedUrl != null) {
                 startFFmpegProcess(luserId, savedUrl);
             }
         } else {
-            log.error("Maximum restart attempts reached for user ID: {}", luserId);
+            log.error("达到最大重启尝试次数，用户 ID: {}", luserId);
             runningFlags.put(luserId, new AtomicBoolean(false));
         }
     }
 
     /**
-     * Stop FFmpeg process for a specific user ID
+     * 停止 FFmpeg 进程
      *
-     * @param luserId User ID
+     * @param luserId 用户 ID
      */
     public static void stopFFmpeg(Integer luserId) {
-        // Mark as not running to prevent restart attempts
         runningFlags.put(luserId, new AtomicBoolean(false));
         restartAttempts.remove(luserId);
         rtmpUrls.remove(luserId);
@@ -315,23 +280,28 @@ public class FFmpegStreamHandler {
             try {
                 outputStream.close();
             } catch (IOException e) {
-                log.error("Failed to close FFmpeg output stream for user ID: {}", luserId, e);
+                log.error("关闭 FFmpeg 输出流失败，用户 ID: {}", luserId, e);
             }
         }
 
         if (process != null) {
             try {
-                // Try graceful shutdown first
                 process.waitFor(500, java.util.concurrent.TimeUnit.MILLISECONDS);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             } finally {
                 process.destroyForcibly();
-                log.info("FFmpeg process terminated for user ID: {}", luserId);
+                log.info("FFmpeg 进程已终止，用户 ID: {}", luserId);
             }
         }
     }
 
+    /**
+     * 检查 FFmpeg 进程是否存活
+     *
+     * @param luserId 用户 ID
+     * @return 进程是否存活
+     */
     public static boolean isProcessAlive(Integer luserId) {
         Process process = ffmpegProcesses.get(luserId);
         return process != null && process.isAlive() &&
