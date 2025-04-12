@@ -438,6 +438,62 @@ public class SMS {
     }
 
     /**
+     * Start real-time preview with FFmpeg
+     */
+    public void RealPlayWithFFmpeg(int luserID, int channel, CompletableFuture<String> completableFutureOne) {
+        //判断是否正在推流
+        List<Integer> luserIdList = new ArrayList<>(LuserIDandSessionMap.keySet());
+        if (luserIdList.contains(luserID)) {
+            //正在推流
+            log.error("禁止重复推流!");
+            completableFutureOne.complete("false");
+            return;
+        }
+
+        HCISUPCMS.NET_EHOME_PREVIEWINFO_IN struPreviewIn = new HCISUPCMS.NET_EHOME_PREVIEWINFO_IN();
+        struPreviewIn.iChannel = channel; //通道号
+        struPreviewIn.dwLinkMode = 0; //0- TCP方式，1- UDP方式
+        struPreviewIn.dwStreamType = 0; //码流类型：0- 主码流，1- 子码流, 2- 第三码流
+        struPreviewIn.struStreamSever.szIP = ehomePuIp.getBytes(); ;//流媒体服务器IP地址,公网地址
+        struPreviewIn.struStreamSever.wPort = ehomeSmsPreViewPort; //流媒体服务器端口，需要跟服务器启动监听端口一致
+        struPreviewIn.write();
+        //预览请求
+        HCISUPCMS.NET_EHOME_PREVIEWINFO_OUT struPreviewOut = new HCISUPCMS.NET_EHOME_PREVIEWINFO_OUT();
+        //请求开始预览
+        if (!CMS.hcISUPCMS.NET_ECMS_StartGetRealStream(luserID, struPreviewIn, struPreviewOut)) {
+            log.error("请求开始预览失败,错误码:"+CMS.hcISUPCMS.NET_ECMS_GetLastError());
+            completableFutureOne.complete("false");
+            return;
+        } else {
+            struPreviewOut.read();
+        }
+
+        HCISUPCMS.NET_EHOME_PUSHSTREAM_IN struPushInfoIn = new HCISUPCMS.NET_EHOME_PUSHSTREAM_IN();
+        struPushInfoIn.read();
+        struPushInfoIn.dwSize = struPushInfoIn.size();
+        struPushInfoIn.lSessionID = struPreviewOut.lSessionID;
+        struPushInfoIn.write();
+        HCISUPCMS.NET_EHOME_PUSHSTREAM_OUT struPushInfoOut = new HCISUPCMS.NET_EHOME_PUSHSTREAM_OUT();
+        struPushInfoOut.read();
+        struPushInfoOut.dwSize = struPushInfoOut.size();
+        struPushInfoOut.write();
+        //中心管理服务器（CMS）向设备发送请求，设备开始传输预览实时码流
+        if (!CMS.hcISUPCMS.NET_ECMS_StartPushRealStream(luserID, struPushInfoIn, struPushInfoOut)) {
+            log.error("CMS向设备发送请求预览实时码流失败, error code:" + CMS.hcISUPCMS.NET_ECMS_GetLastError());
+            completableFutureOne.complete("false");
+        } else {
+            log.info("CMS向设备发送请求预览实时码流成功, sessionID:" + struPushInfoIn.lSessionID);
+
+            // Create stream handler specifically for FFmpeg
+            HandleStreamV2 handler = new HandleStreamV2(luserID, false);
+            concurrentMap.put(struPushInfoIn.lSessionID, handler);
+            LuserIDandSessionMap.put(luserID, struPushInfoIn.lSessionID);
+
+            completableFutureOne.complete("true");
+        }
+    }
+
+    /**
      * 停止预览,Stream服务停止实时流转发，CMS向设备发送停止预览请求
      */
     public void StopRealPlay(int luserID,int sessionID,int lPreviewHandle) {

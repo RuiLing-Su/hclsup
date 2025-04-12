@@ -3,6 +3,8 @@ package com.hcbt.hcisup.controller;
 import com.hcbt.hcisup.SdkService.CmsService.CMS;
 import com.hcbt.hcisup.SdkService.StreamService.SMS;
 import com.hcbt.hcisup.common.AjaxResult;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.annotation.Resource;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
@@ -26,6 +28,7 @@ import java.util.concurrent.ExecutionException;
 @Slf4j
 @RestController
 @RequestMapping("/PlayBackVideo/")
+@Tag(name = "录像控制接口", description = "处理录像的开始、停止、回放等操作")
 public class PlayBackVideoController {
 
     @Resource
@@ -40,6 +43,7 @@ public class PlayBackVideoController {
      * @return
      */
     @PostMapping("start/{luserId}")
+    @Operation(summary = "开始录制")
     public AjaxResult startPlayBackVideo(@PathVariable("luserId") Integer luserId){
         boolean state = cms.startPlayBackVideo(luserId);
         if(state){
@@ -54,6 +58,7 @@ public class PlayBackVideoController {
      * @return
      */
     @PostMapping("stop/{luserId}")
+    @Operation(summary = "停止录制")
     public AjaxResult stopPlayBackVideo(@PathVariable("luserId") Integer luserId){
         boolean state = cms.stopPlayBackVideo(luserId);
         if(state){
@@ -64,6 +69,7 @@ public class PlayBackVideoController {
 
     //查询设备是否在录像
     @GetMapping("videotapedStatus/{luserId}")
+    @Operation(summary = "查询设备是否正在录像")
     public AjaxResult videotapedStatus(@PathVariable("luserId") Integer luserId){
         if(cms.videotapedStatus(luserId)){
             return AjaxResult.success();
@@ -77,6 +83,7 @@ public class PlayBackVideoController {
      * @return
      */
     @PostMapping("findVideoFile/{luserId}")
+    @Operation(summary = "查找录像文件")
     public AjaxResult findVideoFile(@PathVariable("luserId") Integer luserId,
                                     @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime startTime,
                                     @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime endTime){
@@ -91,6 +98,7 @@ public class PlayBackVideoController {
      * 回放预览
      */
     @PostMapping("backLook/start/{luserId}")
+    @Operation(summary = "开始录像回放")
     public AjaxResult startLookBackVideo(@PathVariable("luserId") Integer luserId,
                                          @RequestParam("filename") String filename,
                                          @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime startTime,

@@ -3,6 +3,8 @@ package com.hcbt.hcisup.controller;
 import com.hcbt.hcisup.SdkService.CmsService.CMS;
 import com.hcbt.hcisup.SdkService.StreamService.SMS;
 import com.hcbt.hcisup.common.AjaxResult;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.annotation.Resource;
 import org.springframework.web.bind.annotation.*;
 
@@ -13,6 +15,7 @@ import java.util.concurrent.ExecutionException;
 
 @RestController
 @RequestMapping("/")
+@Tag(name = "EHome接口", description = "摄像头推流、控制等接口")
 public class EHomeController {
 
 
@@ -24,6 +27,7 @@ public class EHomeController {
      * 根据摄像头编号开始推流
      */
     @PostMapping("startPushStream")
+    @Operation(summary = "根据摄像头编号开始推流")
     public AjaxResult startPushStream(@RequestParam("luserId") Integer luserId,
                                       @RequestParam("channel") Integer channel){
 
@@ -50,6 +54,7 @@ public class EHomeController {
      * 根据摄像头编号停止推流
      */
     @PostMapping(value ="stopPushStream")
+    @Operation(summary = "根据摄像头编号停止推流")
     public AjaxResult stopPreviewDevice(@RequestParam("luserId") Integer luserId)
     {
         Integer i = SMS.LuserIDandSessionMap.get(luserId);
@@ -66,6 +71,7 @@ public class EHomeController {
 
     //根据DeviceID获取lUserID
     @RequestMapping(value ="getLUserId/{DeviceID}")
+    @Operation(summary = "根据DeviceID获取lUserId")
     public AjaxResult getLUserId(@PathVariable("DeviceID") String DeviceID)
     {
         Map<String,Integer> data = cms.getLUserId(DeviceID);
@@ -77,6 +83,7 @@ public class EHomeController {
 
     //云台控制
     @PostMapping(value ="setPTZControlOther/{luserId}")
+    @Operation(summary = "云台控制")
     public AjaxResult setPTZControlOther(@PathVariable("luserId") Integer luserId,
                                          @RequestParam("dwPTZCommand") Integer dwPTZCommand,
                                          @RequestParam(value = "speed", defaultValue = "5") Integer speed)
@@ -90,6 +97,7 @@ public class EHomeController {
 
     //云台控制(停止)
     @PostMapping(value ="stopPTZControlOther/{luserId}")
+    @Operation(summary = "云台控制（停止）")
     public AjaxResult stopPTZControlOther(@PathVariable("luserId") Integer luserId)
     {
         boolean state = cms.stopPTZControlOther(luserId);
@@ -101,6 +109,7 @@ public class EHomeController {
 
     //抓拍
     @PostMapping("/getPic/{luserId}")
+    @Operation(summary = "抓拍")
     public AjaxResult getPic(@PathVariable("luserId") Integer luserId){
         boolean state = cms.takePic(luserId);
         if(state){
