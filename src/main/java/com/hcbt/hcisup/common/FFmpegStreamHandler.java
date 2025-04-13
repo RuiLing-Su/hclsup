@@ -13,7 +13,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * FFmpeg 流处理器
- * 用于管理 FFmpeg 进程，将视频数据推送到指定的 SRT 或 RTMP URL
+ * 用于管理 FFmpeg 进程，将 H.265 视频流转码为 H.264 并推送到 RTMP URL，支持 SRS 服务通过 HLS 分发
  */
 @Slf4j
 public class FFmpegStreamHandler {
@@ -25,7 +25,7 @@ public class FFmpegStreamHandler {
     // 标记 FFmpeg 进程是否正在运行
     private static final ConcurrentHashMap<Integer, AtomicBoolean> runningFlags = new ConcurrentHashMap<>();
     // 保存每个用户的目标 URL 用于重启
-    private static final ConcurrentHashMap<Integer, String> rtmpUrls = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<Integer, String> streamUrls = new ConcurrentHashMap<>();
     // 最大重启尝试次数
     private static final int MAX_RESTART_ATTEMPTS = 3;
     // 记录每个用户的重启次数
@@ -35,11 +35,11 @@ public class FFmpegStreamHandler {
      * 启动 FFmpeg 进程
      *
      * @param luserId 用户 ID
-     * @param srtUrl  目标 SRT URL
+     * @param streamUrl 目标 RTMP URL
      * @return 是否成功启动
      */
-    public static boolean startFFmpeg(Integer luserId, String srtUrl) {
-        log.info("尝试为用户 ID: {} 启动 FFmpeg，目标 URL: {}", luserId, srtUrl);
+    public static boolean startFFmpeg(Integer luserId, String streamUrl) {
+        log.info("尝试为用户 ID: {} 启动 FFmpeg，目标 URL: {}", luserId, streamUrl);
 
         // 检查 FFmpeg 是否可用
         if (!isFFmpegInstalled()) {
@@ -48,7 +48,7 @@ public class FFmpegStreamHandler {
         }
 
         // 执行进程启动逻辑
-        return startFFmpegProcess(luserId, srtUrl);
+        return startFFmpegProcess(luserId, streamUrl);
     }
 
     /**
@@ -71,16 +71,16 @@ public class FFmpegStreamHandler {
      * 启动 FFmpeg 进程的核心逻辑
      *
      * @param luserId 用户 ID
-     * @param rtmpUrl 目标 URL
+     * @param streamUrl 目标 RTMP URL
      * @return 是否成功启动
      */
-    private static boolean startFFmpegProcess(Integer luserId, String rtmpUrl) {
+    private static boolean startFFmpegProcess(Integer luserId, String streamUrl) {
         // 停止已有的进程
         stopExistingProcess(luserId);
 
         try {
             // 构建 FFmpeg 命令
-            List<String> command = buildFFmpegCommand(rtmpUrl);
+            List<String> command = buildFFmpegCommand(streamUrl);
             ProcessBuilder pb = new ProcessBuilder(command);
             pb.redirectErrorStream(true); // 合并标准错误和标准输出
             log.info("启动 FFmpeg 进程，命令: {}", command);
@@ -103,7 +103,7 @@ public class FFmpegStreamHandler {
             new Thread(() -> monitorProcessStatus(luserId, process)).start();
 
             // 初始化运行状态
-            rtmpUrls.put(luserId, rtmpUrl);
+            streamUrls.put(luserId, streamUrl);
             runningFlags.put(luserId, new AtomicBoolean(true));
             restartAttempts.put(luserId, 0);
 
@@ -115,12 +115,12 @@ public class FFmpegStreamHandler {
     }
 
     /**
-     * 构建 FFmpeg 命令
+     * 构建 FFmpeg 命令，将 H.265 转码为 H.264 并输出到 RTMP
      *
-     * @param rtmpUrl 目标 URL
+     * @param streamUrl 目标 RTMP URL
      * @return FFmpeg 命令列表
      */
-    private static List<String> buildFFmpegCommand(String rtmpUrl) {
+    private static List<String> buildFFmpegCommand(String streamUrl) {
         List<String> command = new ArrayList<>();
         command.add("ffmpeg");
         command.add("-f");
@@ -128,17 +128,15 @@ public class FFmpegStreamHandler {
         command.add("-i");
         command.add("pipe:0"); // 从标准输入读取数据
         command.add("-c:v");
-        command.add("copy"); // 视频流直接复制，不重新编码
+        command.add("libx264"); // 转码为 H.264
+        command.add("-g");
+        command.add("50"); // 设置 GOP 大小为 50 帧，适合直播
+        command.add("-preset");
+        command.add("fast"); // 使用快速预设以优化性能
         command.add("-an"); // 无音频
         command.add("-f");
-        command.add("mpegts"); // 输出格式为 MPEG-TS（适用于 SRT）
-        command.add("-mpegts_service_type");
-        command.add("0x1"); // 设置服务类型
-        command.add("-mpegts_pmt_start_pid");
-        command.add("100"); // PMT PID
-        command.add("-mpegts_start_pid");
-        command.add("101"); // 流起始 PID
-        command.add(rtmpUrl); // 目标 URL
+        command.add("flv"); // 输出格式为 FLV，适合 RTMP
+        command.add(streamUrl); // 目标 RTMP URL
         return command;
     }
 
@@ -253,7 +251,7 @@ public class FFmpegStreamHandler {
         if (attempts < MAX_RESTART_ATTEMPTS) {
             log.warn("尝试重启 FFmpeg，用户 ID: {} (第 {}/{} 次)", luserId, attempts + 1, MAX_RESTART_ATTEMPTS);
             restartAttempts.put(luserId, attempts + 1);
-            String savedUrl = rtmpUrls.get(luserId);
+            String savedUrl = streamUrls.get(luserId);
             if (savedUrl != null) {
                 startFFmpegProcess(luserId, savedUrl);
             }
@@ -271,7 +269,7 @@ public class FFmpegStreamHandler {
     public static void stopFFmpeg(Integer luserId) {
         runningFlags.put(luserId, new AtomicBoolean(false));
         restartAttempts.remove(luserId);
-        rtmpUrls.remove(luserId);
+        streamUrls.remove(luserId);
 
         Process process = ffmpegProcesses.remove(luserId);
         OutputStream outputStream = ffmpegOutputStreams.remove(luserId);
