@@ -90,7 +90,7 @@ public class WebSocket{
                 LUserIdCount.put(userId, 0);
                 Map<String, String> map = new HashMap<>();
                 map.put("luserId", String.valueOf(userId));
-                HttpUtil.post("http://localhost:9090/stopPushStream", map);
+                HttpUtil.post("http://localhost:9000/stopPushStream", map);
             } else {
                 LUserIdCount.put(userId, LUserIdCount.get(userId) - 1);
             }
@@ -145,7 +145,7 @@ public class WebSocket{
             map.put("luserId", String.valueOf(userId));
             map.put("channel", String.valueOf(channel));
             try {
-                String res = HttpUtil.post("http://localhost:9090/startPushStream", map);
+                String res = HttpUtil.post("http://localhost:9000/startPushStream", map);
                 Map<String, Object> map1 = JSONObject.parseObject(res);
                 String code = map1.get("code").toString();
                 LUserIdCount.put(userId, "200".equals(code) ? 1 : 0);

@@ -459,8 +459,10 @@ public class SMS {
             return;
         }
         //停止线程
-//        HandleStreamV2 handleStreamV2 = concurrentMap.get(sessionID);
-//        handleStreamV2.stopProcessing();
+        HandleStreamV2 handleStreamV2 = concurrentMap.get(sessionID);
+        if (handleStreamV2 != null) {
+            handleStreamV2.stopProcessing();
+        }
 
         concurrentMap.remove(sessionID);
         PreviewHandSAndSessionIDandMap.remove(lPreviewHandle);
