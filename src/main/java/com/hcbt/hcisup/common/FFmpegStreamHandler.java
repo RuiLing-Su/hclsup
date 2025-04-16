@@ -2,10 +2,7 @@ package com.hcbt.hcisup.common;
 
 import lombok.extern.slf4j.Slf4j;
 
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
+import java.io.*;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
@@ -24,7 +21,7 @@ public class FFmpegStreamHandler {
     private static final ConcurrentHashMap<Integer, OutputStream> ffmpegOutputStreams = new ConcurrentHashMap<>();
     // 标记 FFmpeg 进程是否正在运行
     private static final ConcurrentHashMap<Integer, AtomicBoolean> runningFlags = new ConcurrentHashMap<>();
-    // 保存每个用户的目标 URL 用于重启
+    // 保存每个用户的目标 HLS 路径用于重启
     private static final ConcurrentHashMap<Integer, String> streamUrls = new ConcurrentHashMap<>();
     // 最大重启尝试次数
     private static final int MAX_RESTART_ATTEMPTS = 3;
@@ -35,11 +32,11 @@ public class FFmpegStreamHandler {
      * 启动 FFmpeg 进程
      *
      * @param luserId 用户 ID
-     * @param streamUrl 目标 RTMP URL
+     * @param hlsPath 目标 HLS 文件路径（例如 /var/www/hls/stream_1.m3u8）
      * @return 是否成功启动
      */
-    public static boolean startFFmpeg(Integer luserId, String streamUrl) {
-        log.info("尝试为用户 ID: {} 启动 FFmpeg，目标 URL: {}", luserId, streamUrl);
+    public static boolean startFFmpeg(Integer luserId, String hlsPath) {
+        log.info("尝试为用户 ID: {} 启动 FFmpeg，目标 HLS 路径: {}", luserId, hlsPath);
 
         // 检查 FFmpeg 是否可用
         if (!isFFmpegInstalled()) {
@@ -48,7 +45,7 @@ public class FFmpegStreamHandler {
         }
 
         // 执行进程启动逻辑
-        return startFFmpegProcess(luserId, streamUrl);
+        return startFFmpegProcess(luserId, hlsPath);
     }
 
     /**
@@ -71,16 +68,25 @@ public class FFmpegStreamHandler {
      * 启动 FFmpeg 进程的核心逻辑
      *
      * @param luserId 用户 ID
-     * @param streamUrl 目标 RTMP URL
+     * @param hlsPath 目标 HLS 文件路径
      * @return 是否成功启动
      */
-    private static boolean startFFmpegProcess(Integer luserId, String streamUrl) {
+    private static boolean startFFmpegProcess(Integer luserId, String hlsPath) {
         // 停止已有的进程
         stopExistingProcess(luserId);
 
         try {
+            // 确保 HLS 目录存在
+            File hlsDir = new File(new File(hlsPath).getParent());
+            if (!hlsDir.exists()) {
+                if (!hlsDir.mkdirs()) {
+                    log.error("无法创建 HLS 目录: {}", hlsDir.getAbsolutePath());
+                    return false;
+                }
+            }
+
             // 构建 FFmpeg 命令
-            List<String> command = buildFFmpegCommand(streamUrl);
+            List<String> command = buildFFmpegCommand(hlsPath);
             ProcessBuilder pb = new ProcessBuilder(command);
             pb.redirectErrorStream(true); // 合并标准错误和标准输出
             log.info("启动 FFmpeg 进程，命令: {}", command);
@@ -103,7 +109,7 @@ public class FFmpegStreamHandler {
             new Thread(() -> monitorProcessStatus(luserId, process)).start();
 
             // 初始化运行状态
-            streamUrls.put(luserId, streamUrl);
+            streamUrls.put(luserId, hlsPath);
             runningFlags.put(luserId, new AtomicBoolean(true));
             restartAttempts.put(luserId, 0);
 
@@ -115,12 +121,12 @@ public class FFmpegStreamHandler {
     }
 
     /**
-     * 构建 FFmpeg 命令，将 H.265 转码为 H.264 并输出到 RTMP
+     * 构建 FFmpeg 命令，将 H.265 转码为 H.264 并输出为 HLS
      *
-     * @param streamUrl 目标 RTMP URL
+     * @param hlsPath 目标 HLS 文件路径
      * @return FFmpeg 命令列表
      */
-    private static List<String> buildFFmpegCommand(String streamUrl) {
+    private static List<String> buildFFmpegCommand(String hlsPath) {
         List<String> command = new ArrayList<>();
         command.add("ffmpeg");
         command.add("-f");
@@ -130,13 +136,25 @@ public class FFmpegStreamHandler {
         command.add("-c:v");
         command.add("libx264"); // 转码为 H.264
         command.add("-g");
-        command.add("50"); // 设置 GOP 大小为 50 帧，适合直播
+        command.add("50"); // 设置 GOP 大小为 50 帧
+        command.add("-keyint_min");
+        command.add("25"); // 最小关键帧间隔
         command.add("-preset");
-        command.add("fast"); // 使用快速预设以优化性能
+        command.add("veryfast"); // 使用更快的预设以降低延迟
+        command.add("-tune");
+        command.add("zerolatency"); // 优化实时流
         command.add("-an"); // 无音频
         command.add("-f");
-        command.add("flv"); // 输出格式为 FLV，适合 RTMP
-        command.add(streamUrl); // 目标 RTMP URL
+        command.add("hls"); // 输出格式为 HLS
+        command.add("-hls_time");
+        command.add("2"); // 每个分段2秒，降低延迟
+        command.add("-hls_list_size");
+        command.add("3"); // 播放列表保留3个分段
+        command.add("-hls_flags");
+        command.add("delete_segments+append_list"); // 删除旧分段并支持动态追加
+        command.add("-hls_segment_type");
+        command.add("mpegts"); // 使用MPEG-TS分段
+        command.add(hlsPath); // 目标 HLS 文件路径
         return command;
     }
 
