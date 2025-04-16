@@ -716,7 +716,6 @@ com/hcbt/hcisup/SdkService/StreamService/HCNetSDK$NET_ITC_TRIGGER_PARAM_UNION.cl
 com/hcbt/hcisup/SdkService/SsService/HCISUPSS$NET_EHOME_SS_CLIENT_PARAM.class
 com/hcbt/hcisup/SdkService/CmsService/HCISUPCMS$NET_EHOME_VOICE_TALK_OUT.class
 com/hcbt/hcisup/SdkService/StreamService/HCNetSDK$NET_VCA_TARGET_INFO.class
-com/hcbt/hcisup/controller/EHomeController.class
 com/hcbt/hcisup/SdkService/AlarmService/HCISUPAlarm$NET_EHOME_CHAN_TIMING_STATUS_SINGLE.class
 com/hcbt/hcisup/SdkService/StreamService/HCNetSDK$NET_DVR_CHANNELSTATE.class
 com/hcbt/hcisup/SdkService/StreamService/HCNetSDK$NET_DVR_PPPOECFG.class
