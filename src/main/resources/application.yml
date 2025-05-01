@@ -1,12 +1,16 @@
 spring:
   profiles:
-    active: prod
+    active: dev # 默认激活 prod 环境
   jackson:
     # 返回格式化日期
     date-format: yyyy-MM-dd HH:mm:ss
     time-zone: GMT+8
   mvc:
     static-path-pattern: /**
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
 
 server:
   port: ${ehome.port}
@@ -54,4 +58,9 @@ knife4j:
     enable-request-time: true
     # 是否显示界面中各类分组
     enable-group: true
+
+app:
+  upload-dir: ${app.upload-dir}
+  result-dir: ${app.result-dir}
+  model-path: ${app.model-path}
 

@@ -453,7 +453,7 @@ public class SMS {
             completableFutureOne.complete("false");
         } else {
             log.info("CMS 向设备发送请求预览实时码流成功, sessionID: " + struPushInfoIn.lSessionID);
-            HandleStreamV2 handler = new HandleStreamV2(luserID, false); // 不使用 WebSocket
+            HandleStreamV2 handler = new HandleStreamV2(luserID); // 不使用 WebSocket
             concurrentMap.put(struPushInfoIn.lSessionID, handler);
             LuserIDandSessionMap.put(luserID, struPushInfoIn.lSessionID);
             completableFutureOne.complete("true");
