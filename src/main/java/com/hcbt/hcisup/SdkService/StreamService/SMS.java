@@ -3,6 +3,7 @@ package com.hcbt.hcisup.SdkService.StreamService;
 import com.hcbt.hcisup.SdkService.CmsService.CMS;
 import com.hcbt.hcisup.SdkService.CmsService.HCISUPCMS;
 import com.hcbt.hcisup.common.HandleStreamV2;
+import com.hcbt.hcisup.common.HandleStreamV2Factory;
 import com.hcbt.hcisup.common.PlayBackStream;
 import com.hcbt.hcisup.common.osSelect;
 import com.hcbt.hcisup.utils.lUserIdAndDeviceMap;
@@ -10,6 +11,7 @@ import com.sun.jna.Native;
 import com.sun.jna.Pointer;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import ws.schild.jave.*;
@@ -20,9 +22,10 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * 流媒体服务（SMS）类
@@ -34,30 +37,44 @@ public class SMS {
 
     public static HCISUPSMS hcISUPSMS = null;
 
+    private final HandleStreamV2Factory handleStreamV2Factory;
+    private final ReentrantLock fileLock = new ReentrantLock();
+
     // 存储 sessionID 和 HandleStreamV2 的映射
-    public static Map<Integer, HandleStreamV2> concurrentMap = new HashMap<>();
+    public static Map<Integer, HandleStreamV2> handleStreamMap = new ConcurrentHashMap<>();
     // 存储 sessionID 和 PlayBackStream 的映射
-    public static Map<Integer, PlayBackStream> PlayBackconcurrentMap = new HashMap<>();
+    public static Map<Integer, PlayBackStream> PlayBackconcurrentMap = new ConcurrentHashMap<>();
 
     // 预览相关映射
-    public static Map<Integer, Integer> PreviewHandSAndSessionIDandMap = new HashMap<>(); // lLinkHandle -> SessionID
-    public static Map<Integer, Integer> SessionIDAndPreviewHandleMap = new HashMap<>();  // SessionID -> lLinkHandle
-    public static Map<Integer, Integer> LuserIDandSessionMap = new HashMap<>();          // lUserID -> SessionID
+    public static Map<Integer, Integer> PreviewHandSAndSessionIDandMap = new ConcurrentHashMap<>(); // lLinkHandle -> SessionID
+    public static Map<Integer, Integer> SessionIDAndPreviewHandleMap = new ConcurrentHashMap<>();  // SessionID -> lLinkHandle
+    public static Map<Integer, Integer> LuserIDandSessionMap = new ConcurrentHashMap<>();          // lUserID -> SessionID
 
     // 回放相关映射
-    public static Map<Integer, Integer> BackLuserIDandSessionMap = new HashMap<>();
-    public static Map<Integer, Integer> BackPreviewHandSAndSessionIDandMap = new HashMap<>();
-    public static Map<Integer, Integer> BackSessionIDAndPreviewHandleMap = new HashMap<>();
+    public static Map<Integer, Integer> BackLuserIDandSessionMap = new ConcurrentHashMap<>();
+    public static Map<Integer, Integer> BackPreviewHandSAndSessionIDandMap = new ConcurrentHashMap<>();
+    public static Map<Integer, Integer> BackSessionIDAndPreviewHandleMap = new ConcurrentHashMap<>();
 
     // 回调函数
-    static FPREVIEW_NEWLINK_CB fPREVIEW_NEWLINK_CB; // 预览监听回调
-    static FPREVIEW_DATA_CB_WIN fPREVIEW_DATA_CB_WIN; // 预览数据回调
-    static PLAYBACK_NEWLINK_CB_FILE fPLAYBACK_NEWLINK_CB_FILE; // 回放监听回调
-    static PLAYBACK_DATA_CB_FILE fPLAYBACK_DATA_CB_FILE; // 回放数据回调
+    private final FPREVIEW_NEWLINK_CB fPREVIEW_NEWLINK_CB; // 预览监听回调
+    private final FPREVIEW_DATA_CB_WIN fPREVIEW_DATA_CB_WIN; // 预览数据回调
+    private PLAYBACK_NEWLINK_CB_FILE fPLAYBACK_NEWLINK_CB_FILE; // 回放监听回调
+    private final PLAYBACK_DATA_CB_FILE fPLAYBACK_DATA_CB_FILE; // 回放数据回调
 
     // 监听配置
     HCISUPSMS.NET_EHOME_LISTEN_PREVIEW_CFG struPreviewListen = new HCISUPSMS.NET_EHOME_LISTEN_PREVIEW_CFG();
     HCISUPSMS.NET_EHOME_PLAYBACK_LISTEN_PARAM struPlayBackListen = new HCISUPSMS.NET_EHOME_PLAYBACK_LISTEN_PARAM();
+
+    @Autowired
+    public SMS(HandleStreamV2Factory handleStreamV2Factory) {
+        this.handleStreamV2Factory = handleStreamV2Factory;
+        // 初始化回调实例（依赖于this，所以在构造方法中创建）
+        this.fPREVIEW_NEWLINK_CB = new FPREVIEW_NEWLINK_CB();
+        this.fPREVIEW_DATA_CB_WIN = new FPREVIEW_DATA_CB_WIN();
+        this.fPLAYBACK_NEWLINK_CB_FILE = new PLAYBACK_NEWLINK_CB_FILE();
+        this.fPLAYBACK_DATA_CB_FILE = new PLAYBACK_DATA_CB_FILE();
+    }
+
 
     @Value("${ehome.in-ip}")
     private String ehomeInIp;
@@ -82,17 +99,19 @@ public class SMS {
     private static boolean createSDKInstance() {
         if (hcISUPSMS == null) {
             synchronized (HCISUPSMS.class) {
-                String strDllPath = "";
-                try {
-                    if (osSelect.isWindows()) {
-                        strDllPath = System.getProperty("user.dir") + "\\lib\\HCISUPStream.dll";
-                    } else if (osSelect.isLinux()) {
-                        strDllPath = System.getProperty("user.dir") + "/lib/libHCISUPStream.so";
+                if (hcISUPSMS == null) {  // 双重检查锁定模式
+                    String strDllPath = "";
+                    try {
+                        if (osSelect.isWindows()) {
+                            strDllPath = System.getProperty("user.dir") + "\\lib\\HCISUPStream.dll";
+                        } else if (osSelect.isLinux()) {
+                            strDllPath = System.getProperty("user.dir") + "/lib/libHCISUPStream.so";
+                        }
+                        hcISUPSMS = (HCISUPSMS) Native.loadLibrary(strDllPath, HCISUPSMS.class);
+                    } catch (Exception ex) {
+                        log.error("加载库失败: " + strDllPath + " 错误: " + ex.getMessage());
+                        return false;
                     }
-                    hcISUPSMS = (HCISUPSMS) Native.loadLibrary(strDllPath, HCISUPSMS.class);
-                } catch (Exception ex) {
-                    log.error("加载库失败: " + strDllPath + " 错误: " + ex.getMessage());
-                    return false;
                 }
             }
         }
@@ -194,9 +213,6 @@ public class SMS {
      * 开启实时预览监听
      */
     private void startPreviewListen() {
-        if (fPREVIEW_NEWLINK_CB == null) {
-            fPREVIEW_NEWLINK_CB = new FPREVIEW_NEWLINK_CB();
-        }
         struPreviewListen.struIPAdress.szIP = ehomeInIp.getBytes();
         struPreviewListen.struIPAdress.wPort = ehomeSmsPreViewPort; // 流媒体服务器监听端口
         struPreviewListen.fnNewLinkCB = fPREVIEW_NEWLINK_CB; // 预览连接请求回调
@@ -245,18 +261,28 @@ public class SMS {
         @Override
         public boolean invoke(int lLinkHandle, HCISUPSMS.NET_EHOME_NEWLINK_CB_MSG pNewLinkCBMsg, Pointer pUserData) {
             HCISUPSMS.NET_EHOME_PREVIEW_DATA_CB_PARAM struDataCB = new HCISUPSMS.NET_EHOME_PREVIEW_DATA_CB_PARAM();
-            PreviewHandSAndSessionIDandMap.put(lLinkHandle, pNewLinkCBMsg.iSessionID);
-            SessionIDAndPreviewHandleMap.put(pNewLinkCBMsg.iSessionID, lLinkHandle);
 
-            if (fPREVIEW_DATA_CB_WIN == null) {
-                fPREVIEW_DATA_CB_WIN = new FPREVIEW_DATA_CB_WIN();
-            }
-            struDataCB.fnPreviewDataCB = fPREVIEW_DATA_CB_WIN;
-            if (!hcISUPSMS.NET_ESTREAM_SetPreviewDataCB(lLinkHandle, struDataCB)) {
-                log.error("NET_ESTREAM_SetPreviewDataCB 失败, 错误: " + hcISUPSMS.NET_ESTREAM_GetLastError());
+            try {
+                // 存储映射关系
+                PreviewHandSAndSessionIDandMap.put(lLinkHandle, pNewLinkCBMsg.iSessionID);
+                SessionIDAndPreviewHandleMap.put(pNewLinkCBMsg.iSessionID, lLinkHandle);
+
+                // 添加日志以便调试
+                log.info("New preview link established: lLinkHandle={}, sessionID={}", lLinkHandle, pNewLinkCBMsg.iSessionID);
+
+                struDataCB.fnPreviewDataCB = fPREVIEW_DATA_CB_WIN;
+
+                // 设置预览数据回调
+                if (!hcISUPSMS.NET_ESTREAM_SetPreviewDataCB(lLinkHandle, struDataCB)) {
+                    log.error("NET_ESTREAM_SetPreviewDataCB 失败, 错误: " + hcISUPSMS.NET_ESTREAM_GetLastError());
+                    return false;
+                }
+
+                return true;
+            } catch (Exception e) {
+                log.error("预览连接回调处理异常: " + e.getMessage(), e);
                 return false;
             }
-            return true;
         }
     }
 
@@ -265,93 +291,61 @@ public class SMS {
      */
     public class FPREVIEW_DATA_CB_WIN implements HCISUPSMS.PREVIEW_DATA_CB {
         @Override
-        public void invoke(int iPreviewHandle, HCISUPSMS.NET_EHOME_PREVIEW_CB_MSG pPreviewCBMsg, Pointer pUserData) throws IOException {
-            switch (pPreviewCBMsg.byDataType) {
-                case HCNetSDK.NET_DVR_SYSHEAD: // 系统头
-                    break;
-                case HCNetSDK.NET_DVR_STREAMDATA: // 码流数据
-                    byte[] dataStream = pPreviewCBMsg.pRecvdata.getByteArray(0, pPreviewCBMsg.dwDataLen);
-                    if (dataStream != null) {
-                        Integer sessionID = PreviewHandSAndSessionIDandMap.get(iPreviewHandle);
-                        HandleStreamV2 handleStreamV2 = concurrentMap.get(sessionID);
-                        if (handleStreamV2 != null) {
-                            handleStreamV2.startProcessing(dataStream);
+        public void invoke(int iPreviewHandle, HCISUPSMS.NET_EHOME_PREVIEW_CB_MSG pPreviewCBMsg, Pointer pUserData) {
+            try {
+                switch (pPreviewCBMsg.byDataType) {
+                    case HCNetSDK.NET_DVR_SYSHEAD: // 系统头
+                        break;
+                    case HCNetSDK.NET_DVR_STREAMDATA: // 码流数据
+                        if (pPreviewCBMsg.pRecvdata != null && pPreviewCBMsg.dwDataLen > 0) {
+                            byte[] dataStream = pPreviewCBMsg.pRecvdata.getByteArray(0, pPreviewCBMsg.dwDataLen);
+                            if (dataStream != null) {
+                                Integer sessionID = PreviewHandSAndSessionIDandMap.get(iPreviewHandle);
+                                if (sessionID != null) {
+                                    // 查找对应的用户ID
+                                    Integer userId = null;
+                                    for (Map.Entry<Integer, Integer> entry : LuserIDandSessionMap.entrySet()) {
+                                        if (entry.getValue().equals(sessionID)) {
+                                            userId = entry.getKey();
+                                            break;
+                                        }
+                                    }
+
+                                    if (userId != null) {
+                                        HandleStreamV2 handleStream = getOrCreateHandleStream(userId,sessionID);
+                                        if (handleStream != null) {
+                                            handleStream.startProcessing(dataStream);
+                                        } else {
+                                            log.warn("未能为用户 {} 获取有效的流处理器", userId);
+                                        }
+                                    } else {
+                                        log.warn("没有找到与会话 {} 关联的用户ID", sessionID);
+                                    }
+                                } else {
+                                    log.warn("预览句柄 {} 没有对应的会话ID", iPreviewHandle);
+                                }
+                            }
                         }
-                    }
-                    break;
+                        break;
+                    default:
+                        log.debug("收到未处理的数据类型: {}", pPreviewCBMsg.byDataType);
+                        break;
+                }
+            } catch (Exception e) {
+                log.error("预览数据回调处理异常: " + e.getMessage(), e);
             }
         }
     }
 
-    /**
-     * 回放监听回调
-     */
-    public class PLAYBACK_NEWLINK_CB_FILE implements HCISUPSMS.PLAYBACK_NEWLINK_CB {
-        @Override
-        public boolean invoke(int lPlayBackLinkHandle, HCISUPSMS.NET_EHOME_PLAYBACK_NEWLINK_CB_INFO pNewLinkCBMsg, Pointer pUserData) {
-            pNewLinkCBMsg.read();
-            HCISUPSMS.NET_EHOME_PLAYBACK_DATA_CB_PARAM struDataCB = new HCISUPSMS.NET_EHOME_PLAYBACK_DATA_CB_PARAM();
-            BackPreviewHandSAndSessionIDandMap.put(lPlayBackLinkHandle, pNewLinkCBMsg.lSessionID);
-            BackSessionIDAndPreviewHandleMap.put(pNewLinkCBMsg.lSessionID, lPlayBackLinkHandle);
-
-            if (fPLAYBACK_DATA_CB_FILE == null) {
-                fPLAYBACK_DATA_CB_FILE = new PLAYBACK_DATA_CB_FILE();
-            }
-            struDataCB.fnPlayBackDataCB = fPLAYBACK_DATA_CB_FILE;
-            struDataCB.byStreamFormat = 0;
-            struDataCB.write();
-            if (!hcISUPSMS.NET_ESTREAM_SetPlayBackDataCB(lPlayBackLinkHandle, struDataCB)) {
-                log.error("NET_ESTREAM_SetPlayBackDataCB 失败, 错误: " + hcISUPSMS.NET_ESTREAM_GetLastError());
-                return false;
-            }
-            return true;
-        }
-    }
-
-    /**
-     * 回放数据回调
-     */
-    public class PLAYBACK_DATA_CB_FILE implements HCISUPSMS.PLAYBACK_DATA_CB {
-        byte[] bytes1 = new byte[1024 * 1024];
-
-        @Override
-        public boolean invoke(int iPlayBackLinkHandle, HCISUPSMS.NET_EHOME_PLAYBACK_DATA_CB_INFO pDataCBInfo, Pointer pUserData) {
-            Integer sessionID = BackPreviewHandSAndSessionIDandMap.get(iPlayBackLinkHandle);
-            PlayBackStream playBackStream = PlayBackconcurrentMap.get(sessionID);
-            if (pDataCBInfo.pData != null && playBackStream != null) {
-                String date = playBackStream.getStartTime().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
-                String filePath = fileVideoPath + playBackStream.getDeviceId() + "/" + date + "/" + playBackStream.getFileName() + ".mp4";
-                try {
-                    File file = new File(fileVideoPath + playBackStream.getDeviceId() + "/" + date);
-                    if (!file.exists()) {
-                        file.mkdirs();
-                    }
-                    try (FileOutputStream playbackFileOutput = new FileOutputStream(filePath, true)) {
-                        long offset = 0;
-                        ByteBuffer buffers = pDataCBInfo.pData.getByteBuffer(offset, pDataCBInfo.dwDataLen);
-                        byte[] bytes = new byte[pDataCBInfo.dwDataLen];
-                        buffers.rewind();
-                        buffers.get(bytes);
-                        playbackFileOutput.write(bytes);
-                    }
-                } catch (IOException e) {
-                    log.error("文件写入失败: " + e.getMessage());
-                }
-            } else {
-                if (playBackStream != null) {
-                    String date = playBackStream.getStartTime().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
-                    String filePath = fileVideoPath + playBackStream.getDeviceId() + "/" + date + "/" + playBackStream.getFileName() + ".mp4";
-                    String filePath2 = fileVideoPath + playBackStream.getDeviceId() + "/" + date + "/" + playBackStream.getFileName() + "_0.mp4";
-                    try {
-                        MP4Covert(filePath, filePath2);
-                        playBackStream.getCompletableFuture().complete("true");
-                        PlayBackconcurrentMap.remove(sessionID);
-                    } catch (EncoderException e) {
-                        log.error("MP4 转换失败: " + e.getMessage());
-                    }
-                }
-            }
-            return true;
+    private HandleStreamV2 getOrCreateHandleStream(int userId, int sessionId) {
+        try {
+            return handleStreamMap.computeIfAbsent(userId, id -> {
+                log.info("为用户 {} 创建新的流处理器，sessionID: {}", id, sessionId);
+                return handleStreamV2Factory.createHandleStream(id, sessionId);
+            });
+        } catch (Exception e) {
+            log.error("创建流处理器异常: " + e.getMessage(), e);
+            return null;
         }
     }
 
@@ -364,46 +358,146 @@ public class SMS {
      */
     public void RealPlay(int luserID, int channel, CompletableFuture<String> completableFutureOne) {
         if (LuserIDandSessionMap.containsKey(luserID)) {
-            log.error("禁止重复推流!");
+            log.error("禁止重复推流! 用户ID: {}", luserID);
             completableFutureOne.complete("false");
             return;
         }
 
-        HCISUPCMS.NET_EHOME_PREVIEWINFO_IN struPreviewIn = new HCISUPCMS.NET_EHOME_PREVIEWINFO_IN();
-        struPreviewIn.iChannel = channel;
-        struPreviewIn.dwLinkMode = 0; // 0- TCP, 1- UDP
-        struPreviewIn.dwStreamType = 0; // 0- 主码流, 1- 子码流, 2- 第三码流
-        struPreviewIn.struStreamSever.szIP = ehomePuIp.getBytes();
-        struPreviewIn.struStreamSever.wPort = ehomeSmsPreViewPort;
-        struPreviewIn.write();
+        try {
+            HCISUPCMS.NET_EHOME_PREVIEWINFO_IN struPreviewIn = new HCISUPCMS.NET_EHOME_PREVIEWINFO_IN();
+            struPreviewIn.iChannel = channel;
+            struPreviewIn.dwLinkMode = 0; // 0- TCP, 1- UDP
+            struPreviewIn.dwStreamType = 0; // 0- 主码流, 1- 子码流, 2- 第三码流
+            struPreviewIn.struStreamSever.szIP = ehomePuIp.getBytes();
+            struPreviewIn.struStreamSever.wPort = ehomeSmsPreViewPort;
+            struPreviewIn.write();
 
-        HCISUPCMS.NET_EHOME_PREVIEWINFO_OUT struPreviewOut = new HCISUPCMS.NET_EHOME_PREVIEWINFO_OUT();
-        if (!CMS.hcISUPCMS.NET_ECMS_StartGetRealStream(luserID, struPreviewIn, struPreviewOut)) {
-            log.error("请求开始预览失败, 错误码: " + CMS.hcISUPCMS.NET_ECMS_GetLastError());
+            HCISUPCMS.NET_EHOME_PREVIEWINFO_OUT struPreviewOut = new HCISUPCMS.NET_EHOME_PREVIEWINFO_OUT();
+            if (!CMS.hcISUPCMS.NET_ECMS_StartGetRealStream(luserID, struPreviewIn, struPreviewOut)) {
+                log.error("请求开始预览失败, 错误码: " + CMS.hcISUPCMS.NET_ECMS_GetLastError());
+                completableFutureOne.complete("false");
+                return;
+            }
+            struPreviewOut.read();
+
+            HCISUPCMS.NET_EHOME_PUSHSTREAM_IN struPushInfoIn = new HCISUPCMS.NET_EHOME_PUSHSTREAM_IN();
+            struPushInfoIn.read();
+            struPushInfoIn.dwSize = struPushInfoIn.size();
+            struPushInfoIn.lSessionID = struPreviewOut.lSessionID;
+            struPushInfoIn.write();
+
+            HCISUPCMS.NET_EHOME_PUSHSTREAM_OUT struPushInfoOut = new HCISUPCMS.NET_EHOME_PUSHSTREAM_OUT();
+            struPushInfoOut.read();
+            struPushInfoOut.dwSize = struPushInfoOut.size();
+            struPushInfoOut.write();
+
+            if (!CMS.hcISUPCMS.NET_ECMS_StartPushRealStream(luserID, struPushInfoIn, struPushInfoOut)) {
+                log.error("CMS 向设备发送请求预览实时码流失败, 错误码: " + CMS.hcISUPCMS.NET_ECMS_GetLastError());
+                completableFutureOne.complete("false");
+            } else {
+                log.info("CMS 向设备发送请求预览实时码流成功, sessionID: " + struPushInfoIn.lSessionID);
+                // 预先创建流处理器
+                getOrCreateHandleStream(luserID, struPushInfoIn.lSessionID);
+                LuserIDandSessionMap.put(luserID, struPushInfoIn.lSessionID);
+                SessionIDAndPreviewHandleMap.put(struPushInfoIn.lSessionID, channel);
+                completableFutureOne.complete("true");
+            }
+        } catch (Exception e) {
+            log.error("开启预览异常: " + e.getMessage(), e);
             completableFutureOne.complete("false");
-            return;
         }
-        struPreviewOut.read();
+    }
 
-        HCISUPCMS.NET_EHOME_PUSHSTREAM_IN struPushInfoIn = new HCISUPCMS.NET_EHOME_PUSHSTREAM_IN();
-        struPushInfoIn.read();
-        struPushInfoIn.dwSize = struPushInfoIn.size();
-        struPushInfoIn.lSessionID = struPreviewOut.lSessionID;
-        struPushInfoIn.write();
 
-        HCISUPCMS.NET_EHOME_PUSHSTREAM_OUT struPushInfoOut = new HCISUPCMS.NET_EHOME_PUSHSTREAM_OUT();
-        struPushInfoOut.read();
-        struPushInfoOut.dwSize = struPushInfoOut.size();
-        struPushInfoOut.write();
+    /**
+     * 回放监听回调
+     */
+    public class PLAYBACK_NEWLINK_CB_FILE implements HCISUPSMS.PLAYBACK_NEWLINK_CB {
+        @Override
+        public boolean invoke(int lPlayBackLinkHandle, HCISUPSMS.NET_EHOME_PLAYBACK_NEWLINK_CB_INFO pNewLinkCBMsg, Pointer pUserData) {
+            try {
+                pNewLinkCBMsg.read();
+                HCISUPSMS.NET_EHOME_PLAYBACK_DATA_CB_PARAM struDataCB = new HCISUPSMS.NET_EHOME_PLAYBACK_DATA_CB_PARAM();
+                BackPreviewHandSAndSessionIDandMap.put(lPlayBackLinkHandle, pNewLinkCBMsg.lSessionID);
+                BackSessionIDAndPreviewHandleMap.put(pNewLinkCBMsg.lSessionID, lPlayBackLinkHandle);
 
-        if (!CMS.hcISUPCMS.NET_ECMS_StartPushRealStream(luserID, struPushInfoIn, struPushInfoOut)) {
-            log.error("CMS 向设备发送请求预览实时码流失败, 错误码: " + CMS.hcISUPCMS.NET_ECMS_GetLastError());
-            completableFutureOne.complete("false");
-        } else {
-            log.info("CMS 向设备发送请求预览实时码流成功, sessionID: " + struPushInfoIn.lSessionID);
-            completableFutureOne.complete("true");
-            LuserIDandSessionMap.put(luserID, struPushInfoIn.lSessionID);
-            concurrentMap.put(struPushInfoIn.lSessionID, new HandleStreamV2(luserID));
+                struDataCB.fnPlayBackDataCB = fPLAYBACK_DATA_CB_FILE;
+                struDataCB.byStreamFormat = 0;
+                struDataCB.write();
+                if (!hcISUPSMS.NET_ESTREAM_SetPlayBackDataCB(lPlayBackLinkHandle, struDataCB)) {
+                    log.error("NET_ESTREAM_SetPlayBackDataCB 失败, 错误: " + hcISUPSMS.NET_ESTREAM_GetLastError());
+                    return false;
+                }
+                return true;
+            } catch (Exception e) {
+                log.error("回放连接回调处理异常: " + e.getMessage(), e);
+                return false;
+            }
+        }
+    }
+
+    /**
+     * 回放数据回调
+     */
+    public class PLAYBACK_DATA_CB_FILE implements HCISUPSMS.PLAYBACK_DATA_CB {
+        @Override
+        public boolean invoke(int iPlayBackLinkHandle, HCISUPSMS.NET_EHOME_PLAYBACK_DATA_CB_INFO pDataCBInfo, Pointer pUserData) {
+            try {
+                Integer sessionID = BackPreviewHandSAndSessionIDandMap.get(iPlayBackLinkHandle);
+                if (sessionID == null) {
+                    log.warn("未找到回放链接句柄 {} 的对应会话ID", iPlayBackLinkHandle);
+                    return false;
+                }
+
+                PlayBackStream playBackStream = PlayBackconcurrentMap.get(sessionID);
+                if (playBackStream == null) {
+                    log.warn("未找到会话ID {} 的回放流信息", sessionID);
+                    return false;
+                }
+
+                String date = playBackStream.getStartTime().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
+                String dirPath = fileVideoPath + playBackStream.getDeviceId() + "/" + date;
+                String filePath = dirPath + "/" + playBackStream.getFileName() + ".mp4";
+
+                if (pDataCBInfo.pData != null) {
+                    fileLock.lock();
+                    try {
+                        File fileDir = new File(dirPath);
+                        if (!fileDir.exists() && !fileDir.mkdirs()) {
+                            log.error("创建目录失败: {}", dirPath);
+                            return false;
+                        }
+
+                        try (FileOutputStream playbackFileOutput = new FileOutputStream(filePath, true)) {
+                            ByteBuffer buffers = pDataCBInfo.pData.getByteBuffer(0, pDataCBInfo.dwDataLen);
+                            byte[] bytes = new byte[pDataCBInfo.dwDataLen];
+                            buffers.rewind();
+                            buffers.get(bytes);
+                            playbackFileOutput.write(bytes);
+                        } catch (IOException e) {
+                            log.error("文件写入失败: " + e.getMessage(), e);
+                            return false;
+                        }
+                    } finally {
+                        fileLock.unlock();
+                    }
+                } else {
+                    // 数据回调结束，进行MP4转换
+                    String filePath2 = dirPath + "/" + playBackStream.getFileName() + "_0.mp4";
+                    try {
+                        MP4Covert(filePath, filePath2);
+                        playBackStream.getCompletableFuture().complete("true");
+                        PlayBackconcurrentMap.remove(sessionID);
+                    } catch (EncoderException e) {
+                        log.error("MP4 转换失败: " + e.getMessage(), e);
+                        playBackStream.getCompletableFuture().complete("false");
+                    }
+                }
+                return true;
+            } catch (Exception e) {
+                log.error("回放数据回调处理异常: " + e.getMessage(), e);
+                return false;
+            }
         }
     }
 
@@ -453,8 +547,8 @@ public class SMS {
             completableFutureOne.complete("false");
         } else {
             log.info("CMS 向设备发送请求预览实时码流成功, sessionID: " + struPushInfoIn.lSessionID);
-            HandleStreamV2 handler = new HandleStreamV2(luserID); // 不使用 WebSocket
-            concurrentMap.put(struPushInfoIn.lSessionID, handler);
+//            HandleStreamV2 handler = new getOrCreateHandleStream(luserID); // 不使用 WebSocket
+//            concurrentMap.put(struPushInfoIn.lSessionID, handler);
             LuserIDandSessionMap.put(luserID, struPushInfoIn.lSessionID);
             completableFutureOne.complete("true");
         }
@@ -483,7 +577,7 @@ public class SMS {
             return;
         }
 
-        concurrentMap.remove(sessionID);
+        handleStreamMap.remove(sessionID);
         PreviewHandSAndSessionIDandMap.remove(lPreviewHandle);
         LuserIDandSessionMap.remove(luserID);
         SessionIDAndPreviewHandleMap.remove(sessionID);
