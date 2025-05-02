@@ -3,6 +3,8 @@ package com.hcbt.hcisup.common;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.*;
+import java.nio.file.Files;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
@@ -85,8 +87,27 @@ public class FFmpegStreamHandler {
                 }
             }
 
+            // 确保帧保存目录存在并设置权限
+            String framesDirPath = "/home/elitedatai/hclsup_java/SRS/hls/image/" + luserId;
+            File framesDir = new File(framesDirPath);
+            if (!framesDir.exists()) {
+                if (!framesDir.mkdirs()) {
+                    log.error("无法创建 frames 目录: {}", framesDirPath);
+                    return false;
+                }
+                // 设置目录权限为 755
+                try {
+                    Files.setPosixFilePermissions(framesDir.toPath(),
+                            PosixFilePermissions.fromString("rwxr-xr-x")); // 755
+                    // 如果需要 777，替换为 PosixFilePermissions.fromString("rwxrwxrwx")
+                } catch (IOException e) {
+                    log.error("设置 frames 目录权限失败: {}", framesDirPath, e);
+                    return false;
+                }
+            }
+
             // 构建 FFmpeg 命令
-            List<String> command = buildFFmpegCommand(hlsPath);
+            List<String> command = buildFFmpegCommand(hlsPath, luserId);
             ProcessBuilder pb = new ProcessBuilder(command);
             pb.redirectErrorStream(true); // 合并标准错误和标准输出
             log.info("启动 FFmpeg 进程，命令: {}", command);
@@ -126,13 +147,18 @@ public class FFmpegStreamHandler {
      * @param hlsPath 目标 HLS 文件路径
      * @return FFmpeg 命令列表
      */
-    private static List<String> buildFFmpegCommand(String hlsPath) {
+    private static List<String> buildFFmpegCommand(String hlsPath, Integer luserId) {
         List<String> command = new ArrayList<>();
         command.add("ffmpeg");
         command.add("-f");
         command.add("hevc"); // 输入格式为 H.265 裸流
         command.add("-i");
         command.add("pipe:0"); // 从标准输入读取数据
+        String framesDirPath = "/home/elitedatai/hclsup_java/SRS/hls/image/" + luserId;
+        command.add("-filter_complex");
+        command.add("[0:v]split=2[vorig][vframes];[vframes]fps=1[vframes_out]"); // 分流并提取每秒一帧
+        command.add("-map");
+        command.add("[vorig]"); // HLS 输出流
         command.add("-c:v");
         command.add("libx264"); // 转码为 H.264
         command.add("-g");
@@ -153,8 +179,13 @@ public class FFmpegStreamHandler {
         command.add("-hls_flags");
         command.add("delete_segments+append_list"); // 删除旧分段并支持动态追加
         command.add("-hls_segment_type");
-        command.add("mpegts"); // 使用MPEG-TS分段
+        command.add("mpegts"); // 使用 MPEG-TS 分段
         command.add(hlsPath); // 目标 HLS 文件路径
+        command.add("-map");
+        command.add("[vframes_out]"); // 帧输出流
+        command.add("-f");
+        command.add("image2"); // 输出为图片
+        command.add(framesDirPath + "/frame_%04d.jpg"); // 帧保存路径
         return command;
     }
 
@@ -233,6 +264,12 @@ public class FFmpegStreamHandler {
      * @param data    视频数据
      */
     public static void writeData(Integer luserId, byte[] data) {
+        // Fix NullPointerException by adding a null check
+        if (data == null) {
+            log.warn("收到空数据，用户 ID: {}, 跳过处理", luserId);
+            return;
+        }
+
         if (!isProcessAlive(luserId)) {
             log.warn("无法写入数据，用户 ID: {} 的 FFmpeg 进程未运行", luserId);
             return;

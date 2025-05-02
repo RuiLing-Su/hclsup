@@ -27,13 +27,13 @@ ehome:
     EventInfoPrintType: file
 
 
-app:
-  upload-dir: /home/ubuntu/hc_isup/yolo123/uploads
-  result-dir: /home/ubuntu/hc_isup/yolo123/results
-  model-path: /home/ubuntu/hc_isup/yolo123/yolo-model/yolov5nu.onnx
-
-
 #app:
-#  upload-dir: C:/Users/Su180/IdeaProjects/yolocv/yolo123/uploads
-#  result-dir: C:/Users/Su180/IdeaProjects/yolocv/yolo123/results
-#  model-path: C:/Users/Su180/IdeaProjects/yolocv/yolo123/src/main/resources/yolo-model/yolov8n.onnx
+#  upload-dir: /home/ubuntu/hc_isup/yolo123/uploads
+#  result-dir: /home/ubuntu/hc_isup/yolo123/results
+#  model-path: /home/ubuntu/hc_isup/yolo123/yolo-model/yolov5nu.onnx
+
+
+app:
+  upload-dir: C:\Users\Su180\IdeaProjects\yolocv\yolo123\uploads
+  result-dir: C:\Users\Su180\IdeaProjects\yolocv\yolo123\results
+  model-path: C:\Users\Su180\IdeaProjects\yolocv\yolo123\src\main\resources\yolo-model\yolov8n.onnx

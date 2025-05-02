@@ -4,10 +4,12 @@ import com.hcbt.hcisup.SdkService.CmsService.CMS;
 import com.hcbt.hcisup.SdkService.StreamService.SMS;
 import com.hcbt.hcisup.common.AjaxResult;
 import com.hcbt.hcisup.common.FFmpegStreamHandler;
+import com.hcbt.hcisup.service.FrameDetectionProcessor;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.annotation.Resource;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Objects;
@@ -25,7 +27,8 @@ public class FFmpegStreamController {
 
     @Resource
     private SMS sms;
-
+    @Autowired
+    private FrameDetectionProcessor frameDetectionProcessor;
     /**
      * 开始 HLS 推流（使用 FFmpeg）
      *
@@ -37,11 +40,11 @@ public class FFmpegStreamController {
     @Operation(summary = "开始 HLS 推流")
     public AjaxResult startHlsStream(
             @RequestParam("channel") Integer channel,
-            @RequestParam("hlsPath") @Parameter(description = "目标 HLS 文件路径（例如 /hls/stream_1.m3u8）") String hlsPath) {
+            @RequestParam("hlsPath") @Parameter(description = "目标 HLS 文件路径（例如 stream_1）") String hlsPath) {
 
         Integer luserId = 0;
 //        hlsPath = "/home/ubuntu/hc_isup/srs/trunk" + hlsPath; // 114的
-        hlsPath = "/home/elitedatai/hclsup_java/SRS" + hlsPath; // 208的
+        hlsPath = "/home/elitedatai/hclsup_java/SRS/hls/" + hlsPath + ".m3u8"; // 208的
 
 
         // 验证 HLS 路径
@@ -54,6 +57,9 @@ public class FFmpegStreamController {
             return AjaxResult.error("启动 FFmpeg 失败");
         }
 
+        // 启动帧检测
+        frameDetectionProcessor.startDetection(luserId);
+
         // 启动 ISUP 流并处理结果
         CompletableFuture<String> future = new CompletableFuture<>();
         sms.RealPlayWithFFmpeg(luserId, channel, future);
@@ -63,10 +69,12 @@ public class FFmpegStreamController {
                 return AjaxResult.success("HLS 流启动成功，播放路径: " + hlsPath);
             } else {
                 FFmpegStreamHandler.stopFFmpeg(luserId);
+                frameDetectionProcessor.stopDetection(luserId);
                 return AjaxResult.error("启动流失败");
             }
         } catch (InterruptedException | ExecutionException e) {
             FFmpegStreamHandler.stopFFmpeg(luserId);
+            frameDetectionProcessor.stopDetection(luserId);
             return AjaxResult.error("流启动失败: " + e.getMessage());
         }
     }
@@ -153,6 +161,7 @@ public class FFmpegStreamController {
         } catch (Exception e) {
             // 如果启动失败，停止 FFmpeg 进程并返回错误
             FFmpegStreamHandler.stopFFmpeg(luserId);
+            frameDetectionProcessor.stopDetection(luserId);
             return AjaxResult.error("启动流失败: " + e.getMessage());
         }
 
@@ -164,10 +173,12 @@ public class FFmpegStreamController {
             }
             // 如果结果不是 "true"，停止 FFmpeg 并返回错误
             FFmpegStreamHandler.stopFFmpeg(luserId);
+            frameDetectionProcessor.stopDetection(luserId);
             return AjaxResult.error("启动流失败");
         } catch (InterruptedException | ExecutionException e) {
             // 处理异步执行中的异常，停止 FFmpeg 并返回错误
             FFmpegStreamHandler.stopFFmpeg(luserId);
+            frameDetectionProcessor.stopDetection(luserId);
             return AjaxResult.error("流启动被中断: " + e.getMessage());
         }
     }
@@ -192,6 +203,7 @@ public class FFmpegStreamController {
             // 停止 ISUP 流并清理 FFmpeg 进程
             sms.StopRealPlay(luserId, sessionId, SMS.SessionIDAndPreviewHandleMap.get(sessionId));
             FFmpegStreamHandler.stopFFmpeg(luserId);
+            frameDetectionProcessor.stopDetection(luserId);
             return AjaxResult.success("流已成功停止");
         } catch (Exception e) {
             return AjaxResult.error("停止流失败: " + e.getMessage());

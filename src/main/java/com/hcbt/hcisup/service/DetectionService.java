@@ -123,6 +123,11 @@ public class DetectionService {
      * @param detections 检测结果列表
      */
     void drawDetections(Mat image, List<Detection> detections) {
+        if (detections == null) {
+            log.warn("检测结果为空，跳过绘制");
+            return;
+        }
+
         for (Detection detection : detections) {
             // 绘制边界框
             opencv_imgproc.rectangle(

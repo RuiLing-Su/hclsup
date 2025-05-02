@@ -1,189 +1,168 @@
 package com.hcbt.hcisup.service;
 
-import com.hcbt.hcisup.SdkService.StreamService.SMS;
-import com.hcbt.hcisup.model.Detection;
 import lombok.extern.slf4j.Slf4j;
-import org.bytedeco.javacv.FFmpegFrameGrabber;
-import org.bytedeco.javacv.FFmpegFrameRecorder;
-import org.bytedeco.javacv.Frame;
-import org.bytedeco.javacv.OpenCVFrameConverter;
-import org.bytedeco.opencv.opencv_core.Mat;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import java.io.PipedInputStream;
-import java.io.PipedOutputStream;
-import java.util.List;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
+import java.io.File;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.Arrays;
+import java.util.Comparator;
 
 /**
- * @ClassName: StreamService
- * @Description: 流媒体服务，用于处理视频流的接收、分析和转发。
- * 支持HLS流的输出，并集成目标检测功能。
- * @Author: ruiling
- * @Date: 2025/04/29
+ * 视频流服务
+ * 负责将检测帧转换为流媒体格式供VLC等播放器播放
  */
 @Slf4j
 @Service
-public class StreamService {
-    private final ConcurrentHashMap<Integer, PipedOutputStream> outputStreams = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<Integer, FFmpegFrameGrabber> grabbers = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<Integer, FFmpegFrameRecorder> recorders = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<Integer, Thread> processingThreads = new ConcurrentHashMap<>();
-    private final DetectionService detectionService;
-    private final SMS sms;
-    private final OpenCVFrameConverter.ToMat converter = new OpenCVFrameConverter.ToMat();
+public class StreamingService {
 
-    public StreamService(DetectionService detectionService, SMS sms) {
-        this.detectionService = detectionService;
-        this.sms = sms;
-    }
+    @Autowired
+    private FrameDetectionProcessor frameDetectionProcessor;
 
-    public void startHlsStream(int channel, String hlsPath) throws Exception {
-        if (outputStreams.containsKey(channel)) {
-            throw new IllegalStateException("通道 " + channel + " 已处于流处理状态");
-        }
-
-        // 创建管道输入流和输出流，用于接收ES数据
-        PipedInputStream pipedInput = new PipedInputStream();
-        PipedOutputStream pipedOutput = new PipedOutputStream(pipedInput);
-        outputStreams.put(channel, pipedOutput);
-
-        // 创建FFmpeg帧抓取器，用于读取管道输入流中的H.265格式数据
-        FFmpegFrameGrabber grabber = new FFmpegFrameGrabber(pipedInput);
-        grabber.setFormat("hevc");
-        grabbers.put(channel, grabber);
-
-        // 调用SMS服务启动实时播放，获取播放结果
-        CompletableFuture<String> future = new CompletableFuture<>();
-        int userId = 0; // 默认用户ID为0，根据实际情况调整
-        sms.RealPlay(userId, channel, future);
-        String result = future.get();
-        if (!"true".equals(result)) {
-            throw new RuntimeException("SMS 流启动失败");
-        }
-
-        // 创建并启动处理视频流的线程
-        Thread thread = new Thread(() -> processStream(channel, hlsPath));
-        thread.start();
-        processingThreads.put(channel, thread);
-    }
+    private static final int DEFAULT_FRAME_RATE = 1; // 默认帧率，每秒1帧
+    private static final int MJPEG_QUALITY = 90; // MJPEG质量，0-100
+    private static final byte[] MJPEG_BOUNDARY = "\r\n--frame\r\nContent-Type: image/jpeg\r\nContent-Length: ".getBytes();
+    private static final byte[] MJPEG_LINE_END = "\r\n\r\n".getBytes();
 
     /**
-     * 处理指定通道的视频流，进行目标检测并将结果录制为HLS流。
+     * 以MJPEG格式流式传输检测帧
+     * MJPEG格式可以被VLC和大多数现代浏览器支持
      *
-     * @param channel 通道ID
-     * @param hlsPath HLS流的输出路径
+     * @param luserId 用户ID
+     * @param outputStream 输出流
      */
-    private void processStream(int channel, String hlsPath) {
-        FFmpegFrameGrabber grabber = grabbers.get(channel);
-        try {
-            grabber.start();
+    public void streamMjpegFromDetectionFrames(Integer luserId, OutputStream outputStream) {
+        String framesDirPath = "/home/elitedatai/hclsup_java/SRS/hls/image/" + luserId + "/results";
+        File framesDir = new File(framesDirPath);
 
-            // 创建FFmpeg帧录制器，用于输出HLS流
-            FFmpegFrameRecorder recorder = new FFmpegFrameRecorder(hlsPath, grabber.getImageWidth(), grabber.getImageHeight());
-            recorder.setFormat("hls");
-            recorder.setOption("hls_time", "2");
-            recorder.setOption("hls_list_size", "3");
-            recorder.setOption("hls_flags", "delete_segments+append_list");
-            recorder.setOption("hls_segment_type", "mpegts");
-            recorder.setVideoCodec(org.bytedeco.ffmpeg.global.avcodec.AV_CODEC_ID_H264);
-            recorder.setFrameRate(grabber.getFrameRate());
-            recorder.setOption("preset", "veryfast");
-            recorder.setOption("tune", "zerolatency");
-            recorder.setOption("g", "50");
-            recorder.setOption("keyint_min", "25");
-            recorder.start();
-            recorders.put(channel, recorder);
-
-            Frame frame;
-            while ((frame = grabber.grab()) != null && processingThreads.containsKey(channel)) {
-                if (frame.image != null) {
-                    Mat mat = converter.convert(frame);
-                    if (mat != null) {
-                        // 调用目标检测服务进行推理
-                        List<Detection> detections = detectionService.runInference(mat);
-                        // 在图像上绘制检测结果
-                        detectionService.drawDetections(mat, detections);
-                        // 将处理后的Mat转换回Frame格式
-                        Frame processedFrame = converter.convert(mat);
-                        // 录制处理后的帧
-                        recorder.record(processedFrame);
-                        mat.close();
-                    }
-                }
-            }
-        } catch (Exception e) {
-            log.error("处理视频流失败，通道: {}，错误: {}", channel, e.getMessage(), e);
-        } finally {
-            // 无论是否发生异常，最终都要停止流处理
-            stopStream(channel);
-        }
-    }
-
-    /**
-     * 处理接收到的ES数据，将其写入对应用户的管道输出流。
-     *
-     * @param userId 用户ID，用于确定写入哪个通道的输出流
-     * @param esData 接收到的ES数据字节数组
-     */
-    public void processStreamData(Integer userId, byte[] esData) {
-        if (userId == null || esData == null || esData.length == 0) {
-            log.warn("收到无效的ES数据，用户ID: {}", userId);
+        if (!framesDir.exists()) {
+            log.error("检测结果目录不存在: {}", framesDirPath);
             return;
         }
 
-        // 根据用户ID获取对应的管道输出流
-        PipedOutputStream outputStream = outputStreams.get(userId);
-        if (outputStream != null) {
+        try {
+            // 写入MJPEG头部
+            outputStream.write(("--frame\r\n").getBytes());
+
+            String lastProcessedFrame = null;
+
+            // 持续循环，直到线程被中断
+            while (!Thread.currentThread().isInterrupted()) {
+                try {
+                    // 确保用户还在处理中
+                    if (!frameDetectionProcessor.isProcessingUser(luserId)) {
+                        log.info("用户 {} 的检测处理已停止，结束视频流", luserId);
+                        break;
+                    }
+
+                    // 获取最新的检测结果路径
+                    String latestResultPath = frameDetectionProcessor.getLatestResultPath(luserId);
+
+                    // 如果没有最新结果，则尝试从目录获取
+                    if (latestResultPath == null) {
+                        File[] frameFiles = framesDir.listFiles((dir, name) -> name.endsWith(".jpg"));
+                        if (frameFiles != null && frameFiles.length > 0) {
+                            // 按修改时间排序，获取最新的文件
+                            File latestFrame = Arrays.stream(frameFiles)
+                                    .max(Comparator.comparing(File::lastModified))
+                                    .orElse(null);
+
+                            if (latestFrame != null) {
+                                latestResultPath = latestFrame.getAbsolutePath();
+                            }
+                        }
+                    }
+
+                    // 如果有有效的结果路径，并且是新的帧
+                    if (latestResultPath != null && !latestResultPath.equals(lastProcessedFrame)) {
+                        Path path = Paths.get(latestResultPath);
+                        if (Files.exists(path)) {
+                            // 读取图像数据
+                            byte[] imageData = Files.readAllBytes(path);
+
+                            // 写入MJPEG帧
+                            outputStream.write(MJPEG_BOUNDARY);
+                            outputStream.write(String.valueOf(imageData.length).getBytes());
+                            outputStream.write(MJPEG_LINE_END);
+                            outputStream.write(imageData);
+                            outputStream.write(("\r\n--frame\r\n").getBytes());
+                            outputStream.flush();
+
+                            lastProcessedFrame = latestResultPath;
+                        }
+                    }
+
+                    // 根据帧率控制流速
+                    Thread.sleep(1000 / DEFAULT_FRAME_RATE);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    log.info("视频流线程被中断");
+                    break;
+                } catch (IOException e) {
+                    log.error("处理视频流时出错", e);
+                    break;
+                }
+            }
+        } catch (IOException e) {
+            log.error("初始化视频流失败", e);
+        } finally {
             try {
-                outputStream.write(esData);
-                outputStream.flush();// 刷新缓冲区，确保数据立即写入
-            } catch (Exception e) {
-                log.error("写入 ES 数据失败，用户ID: {}", userId, e);
+                outputStream.close();
+            } catch (IOException e) {
+                log.error("关闭视频流输出流失败", e);
             }
         }
     }
 
-    public void stopStream(int channel) {
-        processingThreads.remove(channel);
+    /**
+     * 生成MP4视频文件从检测帧
+     *
+     * @param luserId 用户ID
+     * @param outputPath 输出文件路径
+     * @param duration 视频时长(秒)
+     * @return 是否成功
+     */
+    public boolean generateMp4FromDetectionFrames(Integer luserId, String outputPath, int duration) {
+        String framesDirPath = "/home/elitedatai/hclsup_java/SRS/hls/image/" + luserId + "/results";
+        File framesDir = new File(framesDirPath);
 
-        PipedOutputStream outputStream = outputStreams.remove(channel);
-        if (outputStream != null) {
-            try {
-                outputStream.close();
-            } catch (Exception e) {
-                log.error("关闭输出流失败，通道: {}", channel, e);
-            }
+        if (!framesDir.exists()) {
+            log.error("检测结果目录不存在: {}", framesDirPath);
+            return false;
         }
 
-        // 获取并停止帧抓取器
-        FFmpegFrameGrabber grabber = grabbers.remove(channel);
-        if (grabber != null) {
-            try {
-                grabber.stop();
-                grabber.release();
-            } catch (Exception e) {
-                log.error("停止抓取器失败，通道: {}", channel, e);
-            }
-        }
+        try {
+            // 构建FFmpeg命令
+            ProcessBuilder pb = new ProcessBuilder(
+                    "ffmpeg",
+                    "-framerate", String.valueOf(DEFAULT_FRAME_RATE),
+                    "-pattern_type", "glob",
+                    "-i", framesDirPath + "/result_*.jpg",
+                    "-c:v", "libx264",
+                    "-pix_fmt", "yuv420p",
+                    "-t", String.valueOf(duration),  // 视频时长
+                    "-y",  // 覆盖已有文件
+                    outputPath
+            );
 
-        // 获取并停止帧录制器
-        FFmpegFrameRecorder recorder = recorders.remove(channel);
-        if (recorder != null) {
-            try {
-                recorder.stop();
-                recorder.release();
-            } catch (Exception e) {
-                log.error("停止录制器失败，通道: {}", channel, e);
-            }
-        }
+            Process process = pb.start();
+            int exitCode = process.waitFor();
 
-        // 停止SMS实时播放（根据用户ID查找会话信息并停止）
-        int userId = 0;
-        Integer sessionId = SMS.LuserIDandSessionMap.get(userId);
-        if (sessionId != null) {
-            sms.StopRealPlay(userId, sessionId, SMS.SessionIDAndPreviewHandleMap.get(sessionId));
+            if (exitCode == 0) {
+                log.info("成功生成MP4视频文件: {}", outputPath);
+                return true;
+            } else {
+                log.error("生成MP4视频失败，FFmpeg退出码: {}", exitCode);
+                return false;
+            }
+        } catch (IOException | InterruptedException e) {
+            log.error("生成MP4视频时出错", e);
+            return false;
         }
     }
 }

@@ -29,4 +29,4 @@ ehome:
 app:
   upload-dir: /home/elitedatai/hclsup_java/yolo123/uploads
   result-dir: /home/elitedatai/hclsup_java/yolo123/results
-  model-path: /home/elitedatai/hclsup_java/yolo123/model/yolov5nu.onnx
+  model-path: /home/elitedatai/hclsup_java/yolo123/model/yolov8n.onnx
