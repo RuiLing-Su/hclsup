@@ -1,6 +1,6 @@
 spring:
   profiles:
-    active: dev # 默认激活 prod 环境
+    active: prod # 默认激活 prod 环境
   jackson:
     # 返回格式化日期
     date-format: yyyy-MM-dd HH:mm:ss

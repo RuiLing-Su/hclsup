@@ -27,6 +27,6 @@ ehome:
     EventInfoPrintType: file
 
 app:
-  upload-dir: /home/elitedatai/hclsup_java/yolo123/uploads # 生产环境的上传路径，您可以根据实际情况修改
-  result-dir: /home/elitedatai/hclsup_java/yolo123/results # 生产环境的结果路径，您可以根据实际情况修改
+  upload-dir: /home/elitedatai/hclsup_java/yolo123/uploads
+  result-dir: /home/elitedatai/hclsup_java/yolo123/results
   model-path: /home/elitedatai/hclsup_java/yolo123/model/yolov5nu.onnx

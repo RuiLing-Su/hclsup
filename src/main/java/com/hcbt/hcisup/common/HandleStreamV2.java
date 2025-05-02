@@ -1,6 +1,5 @@
 package com.hcbt.hcisup.common;
 
-import com.hcbt.hcisup.service.StreamService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -16,7 +15,6 @@ public class HandleStreamV2 {
     private byte[] allEsBytes = null;
     // 用户 ID
     private final Integer luserId;
-    private StreamService streamService;
     // 是否正在处理流数据
     private boolean isProcessing = false;
     /**
@@ -47,8 +45,9 @@ public class HandleStreamV2 {
 
         // 检查是否为 RTP 包（包头为 00 00 01 BA）
         if (isRtpPacket(outputData)) {
-            byte[] esBytes = extractEsBytes(outputData);
-            streamService.processStreamData(luserId, esBytes);
+            // 处理完整的帧数据
+            processCompleteFrame();
+            allEsBytes = null;
         }
 
         // 检查是否为 PES 包（包头为 00 00 01 E0）
@@ -57,6 +56,16 @@ public class HandleStreamV2 {
             byte[] esBytes = extractEsBytes(outputData);
             allEsBytes = concatenateEsBytes(allEsBytes, esBytes);
         }
+    }
+
+    /**
+     * 处理完整的帧数据
+     * 将累积的裸流数据发送到 WebSocket 或 FFmpeg
+     */
+    private void processCompleteFrame() {
+        // 通过 FFmpeg 推送数据
+        FFmpegStreamHandler.writeData(luserId, allEsBytes);
+        log.debug("通过 FFmpeg 推送裸流数据，用户 ID: {}", luserId);
     }
 
     /**
