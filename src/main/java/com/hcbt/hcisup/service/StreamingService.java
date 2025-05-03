@@ -43,7 +43,7 @@ public class StreamingService {
      * @param outputStream 输出流
      */
     public void streamMjpegFromDetectionFrames(Integer luserId, OutputStream outputStream) {
-        String framesDirPath = framesDirBasePath + "/" + luserId + "/results";
+        String framesDirPath = framesDirBasePath + luserId + "/results";
         File framesDir = new File(framesDirPath);
 
         if (!framesDir.exists()) {
@@ -134,7 +134,7 @@ public class StreamingService {
      * @return 是否成功
      */
     public boolean generateMp4FromDetectionFrames(Integer luserId, String outputPath, int duration) {
-        String framesDirPath = framesDirBasePath + "/" + luserId + "/results";
+        String framesDirPath = framesDirBasePath + luserId + "/results";
         File framesDir = new File(framesDirPath);
 
         if (!framesDir.exists()) {

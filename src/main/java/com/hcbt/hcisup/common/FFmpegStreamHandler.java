@@ -88,7 +88,7 @@ public class FFmpegStreamHandler {
             }
 
             // 确保帧保存目录存在并设置权限
-            String framesDirPath = "/home/elitedatai/hclsup_java/SRS/hls/image/" + luserId;
+            String framesDirPath = "/home/elitedatai/hclsup_java/yolo123/hls/image/" + luserId;
             File framesDir = new File(framesDirPath);
             if (!framesDir.exists()) {
                 if (!framesDir.mkdirs()) {
@@ -154,7 +154,7 @@ public class FFmpegStreamHandler {
         command.add("hevc"); // 输入格式为 H.265 裸流
         command.add("-i");
         command.add("pipe:0"); // 从标准输入读取数据
-        String framesDirPath = "/home/elitedatai/hclsup_java/SRS/hls/image/" + luserId;
+        String framesDirPath = "/home/elitedatai/hclsup_java/yolo123/hls/image/" + luserId;
         command.add("-filter_complex");
         command.add("[0:v]split=2[vorig][vframes];[vframes]fps=1[vframes_out]"); // 分流并提取每秒一帧
         command.add("-map");

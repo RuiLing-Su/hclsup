@@ -1,16 +1,20 @@
 package com.hcbt.hcisup.controller;
 
+import com.hcbt.hcisup.service.FrameDetectionProcessor;
 import com.hcbt.hcisup.service.StreamingService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
 import java.io.File;
 import java.io.IOException;
@@ -26,15 +30,18 @@ import java.util.stream.Stream;
 @Slf4j
 @RestController
 @RequestMapping("/recording")
-@Tag(name = "视频录制")
+@Tag(name = "检测控制接口")
 public class VideoRecordingController {
 
     private final StreamingService streamingService;
     private final Path recordingDir;
 
+    @Autowired
+    private FrameDetectionProcessor frameDetectionProcessor;
+
     public VideoRecordingController(
             StreamingService streamingService,
-            @Value("${app.recording-dir}") String recordingDirPath) {
+            @Value("${app.stream.recording-dir}") String recordingDirPath) {
         this.streamingService = streamingService;
         this.recordingDir = Paths.get(recordingDirPath);
 
@@ -46,6 +53,79 @@ public class VideoRecordingController {
             throw new RuntimeException("无法创建录制目录", e);
         }
     }
+
+
+    @GetMapping("/latest/{luserId}")
+    @Operation(summary = "获取最新的检测结果图像")
+    public ResponseEntity<byte[]> getLatestDetectionResult(@PathVariable("luserId") Integer luserId) throws IOException {
+        String resultPath = frameDetectionProcessor.getLatestResultPath(luserId);
+        if (resultPath == null) {
+            return ResponseEntity.notFound().build();
+        }
+        Path path = Paths.get(resultPath);
+        if (!Files.exists(path)) {
+            return ResponseEntity.notFound().build();
+        }
+        byte[] imageBytes = Files.readAllBytes(path);
+        return ResponseEntity.ok()
+                .contentType(MediaType.IMAGE_JPEG)
+                .body(imageBytes);
+    }
+
+
+    /**
+     * 获取检测结果视频流，可通过VLC等播放器播放
+     * @param luserId 用户ID
+     * @return 视频流
+     */
+    @GetMapping("/stream/{luserId}")
+    @Operation(summary = "获取实时检测结果视频流", description = "返回可通过VLC等播放器播放的MJPEG视频流")
+    public ResponseEntity<StreamingResponseBody> getDetectionVideoStream(@PathVariable("luserId") Integer luserId) {
+        if (!frameDetectionProcessor.isProcessingUser(luserId)) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(null);
+        }
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.parseMediaType("multipart/x-mixed-replace; boundary=frame"));
+
+        StreamingResponseBody responseBody = outputStream -> {
+            streamingService.streamMjpegFromDetectionFrames(luserId, outputStream);
+        };
+
+        return ResponseEntity.ok()
+                .headers(headers)
+                .body(responseBody);
+    }
+
+//    /**
+//     * 启动检测流程
+//     * @param luserId 用户ID
+//     * @return 操作结果
+//     */
+//    @PostMapping("/start/{luserId}")
+//    @Operation(summary = "启动用户的检测流程")
+//    public ResponseEntity<?> startDetection(@PathVariable("luserId") Integer luserId) {
+//        frameDetectionProcessor.startDetection(luserId);
+//        Map<String, Object> response = new HashMap<>();
+//        response.put("status", "started");
+//        response.put("luserId", luserId);
+//        return ResponseEntity.ok(response);
+//    }
+//
+//    /**
+//     * 停止检测流程
+//     * @param luserId 用户ID
+//     * @return 操作结果
+//     */
+//    @PostMapping("/stop/{luserId}")
+//    @Operation(summary = "停止用户的检测流程")
+//    public ResponseEntity<?> stopDetection(@PathVariable("luserId") Integer luserId) {
+//        frameDetectionProcessor.stopDetection(luserId);
+//        Map<String, Object> response = new HashMap<>();
+//        response.put("status", "stopped");
+//        response.put("luserId", luserId);
+//        return ResponseEntity.ok(response);
+//    }
 
     /**
      * 录制检测流视频

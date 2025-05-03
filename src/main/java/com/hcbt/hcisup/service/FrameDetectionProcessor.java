@@ -45,7 +45,7 @@ public class FrameDetectionProcessor {
     }
 
     private void runDetectionLoop(Integer luserId) {
-        String framesDirPath = framesDirBasePath + "/" + luserId;
+        String framesDirPath = framesDirBasePath + luserId;
         String resultsDirPath = framesDirPath + "/results";
         File resultsDir = new File(resultsDirPath);
         if (!resultsDir.exists()) {

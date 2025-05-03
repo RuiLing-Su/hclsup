@@ -30,7 +30,7 @@ app:
   upload-dir: /home/elitedatai/hclsup_java/yolo123/uploads
   result-dir: /home/elitedatai/hclsup_java/yolo123/results
   model-path: /home/elitedatai/hclsup_java/yolo123/model/yolov8n.onnx
-  recording-dir: /home/elitedatai/hclsup_java/yolo123/recordings
   stream:
-    hls-dir: :/home/elitedatai/hclsup_java/SRS/hls/
-    frames-dir: /home/elitedatai/hclsup_java/SRS/hls/image/
+    hls-dir: /home/elitedatai/hclsup_java/yolo123/hls/
+    frames-dir: /home/elitedatai/hclsup_java/yolo123/hls/image/
+    recording-dir: /home/elitedatai/hclsup_java/yolo123/hls/recordings

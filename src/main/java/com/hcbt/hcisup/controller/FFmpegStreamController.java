@@ -35,6 +35,7 @@ public class FFmpegStreamController {
     public FFmpegStreamController(@Value("${app.stream.hls-dir}") String hlsDirBasePath) {
         this.hlsDirBasePath = hlsDirBasePath;
     }
+
     /**
      * 开始 HLS 推流（使用 FFmpeg）
      *
@@ -95,95 +96,95 @@ public class FFmpegStreamController {
     }
 
 
-    /**
-     * 开始 SRT 推流（使用 FFmpeg）
-     *
-     * @param luserId 用户 ID
-     * @param channel 通道
-     * @param srtUrl  目标 SRT URL
-     * @return AjaxResult 推流启动结果
-     */
-    @PostMapping("/startSrtStream")
-    @Operation(summary = "开始 SRT 推流")
-    public AjaxResult startSrtStream(
-            @RequestParam("luserId") Integer luserId,
-            @RequestParam("channel") Integer channel,
-            @RequestParam("srtUrl") String srtUrl) {
-
-        // 验证 SRT URL 格式
-        if (!isValidSrtUrl(srtUrl)) {
-            return AjaxResult.error("无效的 SRT URL 格式");
-        }
-
-        // 启动 FFmpeg 进程
-        if (!startFFmpegProcess(luserId, srtUrl)) {
-            return AjaxResult.error("启动 FFmpeg 失败");
-        }
-
-        // 启动 ISUP 流并处理结果
-        return startIsupStream(luserId, channel);
-    }
-
-    /**
-     * 验证 SRT URL 是否有效
-     *
-     * @param srtUrl SRT URL
-     * @return 是否有效
-     */
-    private boolean isValidSrtUrl(String srtUrl) {
-        // 检查 URL 是否为空且以 "srt://" 开头
-        return srtUrl != null && srtUrl.startsWith("srt://");
-    }
-
-    /**
-     * 启动 FFmpeg 进程
-     *
-     * @param luserId 用户 ID
-     * @param srtUrl  目标 SRT URL
-     * @return 是否成功启动
-     */
-    private boolean startFFmpegProcess(Integer luserId, String srtUrl) {
-        // 调用 FFmpegStreamHandler 的静态方法启动 FFmpeg
-        return FFmpegStreamHandler.startFFmpeg(luserId, srtUrl);
-    }
-
-    /**
-     * 启动 ISUP 流
-     *
-     * @param luserId 用户 ID
-     * @param channel 通道
-     * @return AjaxResult 流启动结果
-     */
-    private AjaxResult startIsupStream(Integer luserId, Integer channel) {
-        CompletableFuture<String> completableFuture = new CompletableFuture<>();
-
-        try {
-            // 调用 SMS 服务启动 ISUP 流（使用 FFmpeg 标志）
-            sms.RealPlayWithFFmpeg(luserId, channel, completableFuture);
-        } catch (Exception e) {
-            // 如果启动失败，停止 FFmpeg 进程并返回错误
-            FFmpegStreamHandler.stopFFmpeg(luserId);
-            frameDetectionProcessor.stopDetection(luserId);
-            return AjaxResult.error("启动流失败: " + e.getMessage());
-        }
-
-        try {
-            // 获取异步结果并判断是否成功
-            String result = completableFuture.get();
-            if (Objects.equals(result, "true")) {
-                return AjaxResult.success("流启动成功");
-            }
-            // 如果结果不是 "true"，停止 FFmpeg 并返回错误
-            FFmpegStreamHandler.stopFFmpeg(luserId);
-            frameDetectionProcessor.stopDetection(luserId);
-            return AjaxResult.error("启动流失败");
-        } catch (InterruptedException | ExecutionException e) {
-            // 处理异步执行中的异常，停止 FFmpeg 并返回错误
-            FFmpegStreamHandler.stopFFmpeg(luserId);
-            frameDetectionProcessor.stopDetection(luserId);
-            return AjaxResult.error("流启动被中断: " + e.getMessage());
-        }
-    }
+//    /**
+//     * 开始 SRT 推流（使用 FFmpeg）
+//     *
+//     * @param luserId 用户 ID
+//     * @param channel 通道
+//     * @param srtUrl  目标 SRT URL
+//     * @return AjaxResult 推流启动结果
+//     */
+//    @PostMapping("/startSrtStream")
+//    @Operation(summary = "开始 SRT 推流")
+//    public AjaxResult startSrtStream(
+//            @RequestParam("luserId") Integer luserId,
+//            @RequestParam("channel") Integer channel,
+//            @RequestParam("srtUrl") String srtUrl) {
+//
+//        // 验证 SRT URL 格式
+//        if (!isValidSrtUrl(srtUrl)) {
+//            return AjaxResult.error("无效的 SRT URL 格式");
+//        }
+//
+//        // 启动 FFmpeg 进程
+//        if (!startFFmpegProcess(luserId, srtUrl)) {
+//            return AjaxResult.error("启动 FFmpeg 失败");
+//        }
+//
+//        // 启动 ISUP 流并处理结果
+//        return startIsupStream(luserId, channel);
+//    }
+//
+//    /**
+//     * 验证 SRT URL 是否有效
+//     *
+//     * @param srtUrl SRT URL
+//     * @return 是否有效
+//     */
+//    private boolean isValidSrtUrl(String srtUrl) {
+//        // 检查 URL 是否为空且以 "srt://" 开头
+//        return srtUrl != null && srtUrl.startsWith("srt://");
+//    }
+//
+//    /**
+//     * 启动 FFmpeg 进程
+//     *
+//     * @param luserId 用户 ID
+//     * @param srtUrl  目标 SRT URL
+//     * @return 是否成功启动
+//     */
+//    private boolean startFFmpegProcess(Integer luserId, String srtUrl) {
+//        // 调用 FFmpegStreamHandler 的静态方法启动 FFmpeg
+//        return FFmpegStreamHandler.startFFmpeg(luserId, srtUrl);
+//    }
+//
+//    /**
+//     * 启动 ISUP 流
+//     *
+//     * @param luserId 用户 ID
+//     * @param channel 通道
+//     * @return AjaxResult 流启动结果
+//     */
+//    private AjaxResult startIsupStream(Integer luserId, Integer channel) {
+//        CompletableFuture<String> completableFuture = new CompletableFuture<>();
+//
+//        try {
+//            // 调用 SMS 服务启动 ISUP 流（使用 FFmpeg 标志）
+//            sms.RealPlayWithFFmpeg(luserId, channel, completableFuture);
+//        } catch (Exception e) {
+//            // 如果启动失败，停止 FFmpeg 进程并返回错误
+//            FFmpegStreamHandler.stopFFmpeg(luserId);
+//            frameDetectionProcessor.stopDetection(luserId);
+//            return AjaxResult.error("启动流失败: " + e.getMessage());
+//        }
+//
+//        try {
+//            // 获取异步结果并判断是否成功
+//            String result = completableFuture.get();
+//            if (Objects.equals(result, "true")) {
+//                return AjaxResult.success("流启动成功");
+//            }
+//            // 如果结果不是 "true"，停止 FFmpeg 并返回错误
+//            FFmpegStreamHandler.stopFFmpeg(luserId);
+//            frameDetectionProcessor.stopDetection(luserId);
+//            return AjaxResult.error("启动流失败");
+//        } catch (InterruptedException | ExecutionException e) {
+//            // 处理异步执行中的异常，停止 FFmpeg 并返回错误
+//            FFmpegStreamHandler.stopFFmpeg(luserId);
+//            frameDetectionProcessor.stopDetection(luserId);
+//            return AjaxResult.error("流启动被中断: " + e.getMessage());
+//        }
+//    }
 
     /**
      * 停止 RTSP 推流
