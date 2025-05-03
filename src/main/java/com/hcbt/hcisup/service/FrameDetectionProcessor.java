@@ -28,6 +28,7 @@ public class FrameDetectionProcessor {
 
     private final ConcurrentHashMap<Integer, ExecutorService> detectionExecutors = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Integer, String> latestResultPaths = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Integer, String> lastProcessedFrames = new ConcurrentHashMap<>();
 
     public FrameDetectionProcessor(@Value("${app.stream.frames-dir}") String framesDirBasePath) {
         this.framesDirBasePath = framesDirBasePath;
@@ -52,28 +53,40 @@ public class FrameDetectionProcessor {
             resultsDir.mkdirs();
         }
 
-        String lastProcessedFrame = null;
-
         while (!Thread.currentThread().isInterrupted()) {
             try {
                 File framesDir = new File(framesDirPath);
                 File[] frameFiles = framesDir.listFiles((dir, name) -> name.endsWith(".jpg"));
                 if (frameFiles == null || frameFiles.length == 0) {
-                    Thread.sleep(1000);
+                    log.debug("用户 {} 无可用帧，等待中", luserId);
+                    Thread.sleep(500);
                     continue;
                 }
 
-                File latestFrame = Arrays.stream(frameFiles)
-                        .max(Comparator.comparing(File::lastModified))
-                        .orElse(null);
+                // 按文件名排序以确保顺序处理
+                List<File> sortedFrames = Arrays.stream(frameFiles)
+                        .sorted(Comparator.comparing(File::getName))
+                        .toList();
 
-                if (latestFrame == null || latestFrame.getName().equals(lastProcessedFrame)) {
-                    Thread.sleep(1000);
+                String lastProcessedFrame = lastProcessedFrames.get(luserId);
+                File frameToProcess = null;
+
+                // 找到下一个未处理的帧
+                for (File frame : sortedFrames) {
+                    if (lastProcessedFrame == null || frame.getName().compareTo(lastProcessedFrame) > 0) {
+                        frameToProcess = frame;
+                        break;
+                    }
+                }
+
+                if (frameToProcess == null) {
+                    log.debug("用户 {} 无新帧，等待中", luserId);
+                    Thread.sleep(500);
                     continue;
                 }
 
-                String framePath = latestFrame.getAbsolutePath();
-                String resultFilename = "result_" + latestFrame.getName();
+                String framePath = frameToProcess.getAbsolutePath();
+                String resultFilename = "result_" + frameToProcess.getName();
                 String resultPath = resultsDirPath + "/" + resultFilename;
 
                 Mat image = opencv_imgcodecs.imread(framePath);
@@ -83,30 +96,31 @@ public class FrameDetectionProcessor {
                 }
 
                 try {
-                    // Safe call to detection service with error handling
                     List<Detection> detections = detectionService.runInference(image);
                     drawDetections(image, detections);
                     opencv_imgcodecs.imwrite(resultPath, image);
 
-                    lastProcessedFrame = latestFrame.getName();
+                    lastProcessedFrames.put(luserId, frameToProcess.getName());
                     latestResultPaths.put(luserId, resultPath);
+                    log.info("用户 {} 处理帧: {}，结果保存至: {}", luserId, frameToProcess.getName(), resultPath);
                 } catch (Exception e) {
-                    log.error("运行推理时出错: {}", e.getMessage());
-                    // Create an empty detection list to avoid NPE
+                    log.error("用户 {} 运行推理时出错: {}", luserId, e.getMessage());
                     drawDetections(image, new ArrayList<>());
-                    // Still try to save the image without detections
                     opencv_imgcodecs.imwrite(resultPath, image);
+                    lastProcessedFrames.put(luserId, frameToProcess.getName());
+                    latestResultPaths.put(luserId, resultPath);
                 }
 
-                Thread.sleep(1000);
+                // 控制处理速度，避免过快消耗CPU
+                Thread.sleep(500);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
+                log.info("用户 {} 检测循环被中断", luserId);
                 break;
             } catch (Exception e) {
-                log.error("检测帧时出错，用户 ID: {}", luserId, e);
+                log.error("用户 {} 检测帧时出错: {}", luserId, e.getMessage());
                 try {
-                    // Allow some time before retry to avoid CPU spinning
-                    Thread.sleep(2000);
+                    Thread.sleep(1000);
                 } catch (InterruptedException ie) {
                     Thread.currentThread().interrupt();
                     break;
@@ -122,6 +136,7 @@ public class FrameDetectionProcessor {
             log.info("用户 {} 的检测流程已停止", luserId);
         }
         latestResultPaths.remove(luserId);
+        lastProcessedFrames.remove(luserId);
     }
 
     public String getLatestResultPath(Integer luserId) {
@@ -145,7 +160,6 @@ public class FrameDetectionProcessor {
         }
 
         for (Detection detection : detections) {
-            // Validate detection before using it
             if (detection == null || detection.getBox() == null || detection.getColor() == null) {
                 log.warn("检测对象或其属性为空，跳过此检测");
                 continue;
