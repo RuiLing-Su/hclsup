@@ -6,6 +6,7 @@ import org.bytedeco.opencv.opencv_core.*;
 import org.bytedeco.opencv.global.opencv_imgcodecs;
 import org.bytedeco.opencv.global.opencv_imgproc;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.io.File;
@@ -23,17 +24,28 @@ public class FrameDetectionProcessor {
     @Autowired
     private DetectionService detectionService;
 
+    private final String framesDirBasePath;
+
     private final ConcurrentHashMap<Integer, ExecutorService> detectionExecutors = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Integer, String> latestResultPaths = new ConcurrentHashMap<>();
 
+    public FrameDetectionProcessor(@Value("${app.stream.frames-dir}") String framesDirBasePath) {
+        this.framesDirBasePath = framesDirBasePath;
+    }
+
     public void startDetection(Integer luserId) {
+        // 如果已经在处理，先停止
+        stopDetection(luserId);
+
         ExecutorService executor = Executors.newSingleThreadExecutor();
         detectionExecutors.put(luserId, executor);
         executor.submit(() -> runDetectionLoop(luserId));
+
+        log.info("用户 {} 的检测流程已启动", luserId);
     }
 
     private void runDetectionLoop(Integer luserId) {
-        String framesDirPath = "/home/elitedatai/hclsup_java/SRS/hls/image/" + luserId;
+        String framesDirPath = framesDirBasePath + "/" + luserId;
         String resultsDirPath = framesDirPath + "/results";
         File resultsDir = new File(resultsDirPath);
         if (!resultsDir.exists()) {
@@ -107,12 +119,23 @@ public class FrameDetectionProcessor {
         ExecutorService executor = detectionExecutors.remove(luserId);
         if (executor != null) {
             executor.shutdownNow();
+            log.info("用户 {} 的检测流程已停止", luserId);
         }
         latestResultPaths.remove(luserId);
     }
 
     public String getLatestResultPath(Integer luserId) {
         return latestResultPaths.get(luserId);
+    }
+
+    /**
+     * 检查用户是否正在进行检测处理
+     * @param luserId 用户ID
+     * @return 是否正在处理
+     */
+    public boolean isProcessingUser(Integer luserId) {
+        ExecutorService executor = detectionExecutors.get(luserId);
+        return executor != null && !executor.isShutdown() && !executor.isTerminated();
     }
 
     private void drawDetections(Mat image, List<Detection> detections) {
@@ -174,15 +197,5 @@ public class FrameDetectionProcessor {
                 log.error("在绘制检测结果时出错: {}", e.getMessage());
             }
         }
-    }
-
-    /**
-     * 检查用户是否正在进行检测处理
-     * @param luserId 用户ID
-     * @return 是否正在处理
-     */
-    public boolean isProcessingUser(Integer luserId) {
-        ExecutorService executor = detectionExecutors.get(luserId);
-        return executor != null && !executor.isShutdown() && !executor.isTerminated();
     }
 }

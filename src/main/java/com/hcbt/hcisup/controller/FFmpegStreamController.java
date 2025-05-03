@@ -10,6 +10,7 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.annotation.Resource;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Objects;
@@ -29,6 +30,11 @@ public class FFmpegStreamController {
     private SMS sms;
     @Autowired
     private FrameDetectionProcessor frameDetectionProcessor;
+    private final String hlsDirBasePath;
+
+    public FFmpegStreamController(@Value("${app.stream.hls-dir}") String hlsDirBasePath) {
+        this.hlsDirBasePath = hlsDirBasePath;
+    }
     /**
      * 开始 HLS 推流（使用 FFmpeg）
      *
@@ -38,14 +44,10 @@ public class FFmpegStreamController {
      */
     @PostMapping("/startHlsStream")
     @Operation(summary = "开始 HLS 推流")
-    public AjaxResult startHlsStream(
-            @RequestParam("channel") Integer channel,
-            @RequestParam("hlsPath") @Parameter(description = "目标 HLS 文件路径（例如 stream_1）") String hlsPath) {
-
+    public AjaxResult startHlsStream(@RequestParam("channel") Integer channel,
+                                     @RequestParam("hlsPath") String hlsPath) {
         Integer luserId = 0;
-//        hlsPath = "/home/ubuntu/hc_isup/srs/trunk" + hlsPath; // 114的
-        hlsPath = "/home/elitedatai/hclsup_java/SRS/hls/" + hlsPath + ".m3u8"; // 208的
-
+        hlsPath = hlsDirBasePath + hlsPath + ".m3u8";
 
         // 验证 HLS 路径
         if (!isValidHlsPath(hlsPath)) {

@@ -41,7 +41,8 @@ public class DetectionController {
     private FrameDetectionProcessor frameDetectionProcessor;
 
     public DetectionController(
-            DetectionService detectionService, StreamingService streamingService,
+            DetectionService detectionService,
+            StreamingService streamingService,
             @Value("${app.upload-dir}") String uploadDirPath,
             @Value("${app.result-dir}") String resultDirPath) {
         this.detectionService = detectionService;
@@ -151,7 +152,6 @@ public class DetectionController {
                 .contentType(MediaType.IMAGE_JPEG)
                 .body(imageBytes);
     }
-
 
     /**
      * 获取检测结果视频流，可通过VLC等播放器播放

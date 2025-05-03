@@ -1,7 +1,6 @@
 package com.hcbt.hcisup.common;
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 
 /**
  * 流处理器 V2

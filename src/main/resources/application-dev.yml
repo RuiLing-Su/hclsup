@@ -31,9 +31,16 @@ ehome:
 #  upload-dir: /home/ubuntu/hc_isup/yolo123/uploads
 #  result-dir: /home/ubuntu/hc_isup/yolo123/results
 #  model-path: /home/ubuntu/hc_isup/yolo123/yolo-model/yolov5nu.onnx
-
+#  recording-dir: /home/ubuntu/hc_isup/yolo123/recordings
+#  stream:
+#    hls-dir: :/home/ubuntu/hclsup_java/SRS/hls/
+#    frames-dir: /home/ubuntu/hclsup_java/SRS/hls/image/
 
 app:
   upload-dir: C:\Users\Su180\IdeaProjects\yolocv\yolo123\uploads
   result-dir: C:\Users\Su180\IdeaProjects\yolocv\yolo123\results
   model-path: C:\Users\Su180\IdeaProjects\yolocv\yolo123\src\main\resources\yolo-model\yolov8n.onnx
+  recording-dir: C:\Users\Su180\IdeaProjects\yolocv\yolo123\recordings
+  stream:
+    hls-dir: C:\Users\Su180\IdeaProjects\yolocv\yolo123\hls\
+    frames-dir: C:\Users\Su180\IdeaProjects\yolocv\yolo123\hls\image\

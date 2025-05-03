@@ -63,4 +63,8 @@ app:
   upload-dir: ${app.upload-dir}
   result-dir: ${app.result-dir}
   model-path: ${app.model-path}
+  recording-dir: ${app.recording-dir}
+  stream:
+    hls-dir: ${app.stream.hls-dir}
+    frames-dir: ${app.stream.frames-dir}
 
