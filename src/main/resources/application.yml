@@ -7,6 +7,8 @@ spring:
     time-zone: GMT+8
   mvc:
     static-path-pattern: /**
+    async:
+      request-timeout: -1
   servlet:
     multipart:
       max-file-size: 10MB

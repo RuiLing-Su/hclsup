@@ -81,51 +81,60 @@ public class VideoRecordingController {
     @GetMapping("/stream/{luserId}")
     @Operation(summary = "获取实时检测结果视频流", description = "返回可通过VLC等播放器播放的MJPEG视频流")
     public ResponseEntity<StreamingResponseBody> getDetectionVideoStream(@PathVariable("luserId") Integer luserId) {
-        if (!frameDetectionProcessor.isProcessingUser(luserId)) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(null);
+        try {
+            if (!frameDetectionProcessor.isProcessingUser(luserId)) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
+            }
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.parseMediaType("multipart/x-mixed-replace; boundary=frame"));
+
+            StreamingResponseBody responseBody = outputStream -> {
+                try {
+                    streamingService.streamMjpegFromDetectionFrames(luserId, outputStream);
+                } catch (Exception e) {
+                    log.error("视频流处理异常: {}", e.getMessage());
+                }
+            };
+
+            return ResponseEntity.ok()
+                    .headers(headers)
+                    .body(responseBody);
+        } catch (Exception e) {
+            log.error("处理视频流请求时出错: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
-
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.parseMediaType("multipart/x-mixed-replace; boundary=frame"));
-
-        StreamingResponseBody responseBody = outputStream -> {
-            streamingService.streamMjpegFromDetectionFrames(luserId, outputStream);
-        };
-
-        return ResponseEntity.ok()
-                .headers(headers)
-                .body(responseBody);
     }
 
-//    /**
-//     * 启动检测流程
-//     * @param luserId 用户ID
-//     * @return 操作结果
-//     */
-//    @PostMapping("/start/{luserId}")
-//    @Operation(summary = "启动用户的检测流程")
-//    public ResponseEntity<?> startDetection(@PathVariable("luserId") Integer luserId) {
-//        frameDetectionProcessor.startDetection(luserId);
-//        Map<String, Object> response = new HashMap<>();
-//        response.put("status", "started");
-//        response.put("luserId", luserId);
-//        return ResponseEntity.ok(response);
-//    }
-//
-//    /**
-//     * 停止检测流程
-//     * @param luserId 用户ID
-//     * @return 操作结果
-//     */
-//    @PostMapping("/stop/{luserId}")
-//    @Operation(summary = "停止用户的检测流程")
-//    public ResponseEntity<?> stopDetection(@PathVariable("luserId") Integer luserId) {
-//        frameDetectionProcessor.stopDetection(luserId);
-//        Map<String, Object> response = new HashMap<>();
-//        response.put("status", "stopped");
-//        response.put("luserId", luserId);
-//        return ResponseEntity.ok(response);
-//    }
+    /**
+     * 启动检测流程
+     * @param luserId 用户ID
+     * @return 操作结果
+     */
+    @PostMapping("/start/{luserId}")
+    @Operation(summary = "启动用户的检测流程")
+    public ResponseEntity<?> startDetection(@PathVariable("luserId") Integer luserId) {
+        frameDetectionProcessor.startDetection(luserId);
+        Map<String, Object> response = new HashMap<>();
+        response.put("status", "started");
+        response.put("luserId", luserId);
+        return ResponseEntity.ok(response);
+    }
+
+    /**
+     * 停止检测流程
+     * @param luserId 用户ID
+     * @return 操作结果
+     */
+    @PostMapping("/stop/{luserId}")
+    @Operation(summary = "停止用户的检测流程")
+    public ResponseEntity<?> stopDetection(@PathVariable("luserId") Integer luserId) {
+        frameDetectionProcessor.stopDetection(luserId);
+        Map<String, Object> response = new HashMap<>();
+        response.put("status", "stopped");
+        response.put("luserId", luserId);
+        return ResponseEntity.ok(response);
+    }
 
     /**
      * 录制检测流视频

@@ -60,9 +60,6 @@ public class FFmpegStreamController {
             return AjaxResult.error("启动 FFmpeg 失败");
         }
 
-        // 启动帧检测
-        frameDetectionProcessor.startDetection(luserId);
-
         // 启动 ISUP 流并处理结果
         CompletableFuture<String> future = new CompletableFuture<>();
         sms.RealPlayWithFFmpeg(luserId, channel, future);
@@ -72,12 +69,10 @@ public class FFmpegStreamController {
                 return AjaxResult.success("HLS 流启动成功，播放路径: " + hlsPath);
             } else {
                 FFmpegStreamHandler.stopFFmpeg(luserId);
-                frameDetectionProcessor.stopDetection(luserId);
                 return AjaxResult.error("启动流失败");
             }
         } catch (InterruptedException | ExecutionException e) {
             FFmpegStreamHandler.stopFFmpeg(luserId);
-            frameDetectionProcessor.stopDetection(luserId);
             return AjaxResult.error("流启动失败: " + e.getMessage());
         }
     }
