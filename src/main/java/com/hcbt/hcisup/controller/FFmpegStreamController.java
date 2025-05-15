@@ -40,13 +40,13 @@ public class FFmpegStreamController {
      * 开始 HLS 推流（使用 FFmpeg）
      *
      * @param channel 通道
-     * @param hlsPath 目标 HLS 文件路径（例如 /home/ubuntu/hc_isup/srs/trunk/hls/stream_1.m3u8）
+     * @param hlsPath 目标 HLS 文件名称（例如 /home/ubuntu/hc_isup/srs/trunk/hls/stream_1.m3u8）
      * @return AjaxResult 推流启动结果
      */
     @PostMapping("/startHlsStream")
     @Operation(summary = "开始 HLS 推流")
-    public AjaxResult startHlsStream(@RequestParam("channel") Integer channel,
-                                     @RequestParam("hlsPath") String hlsPath) {
+    public AjaxResult startHlsStream(@RequestParam("channel") @Parameter(description = "通道") Integer channel,
+                                     @RequestParam("hlsPath") @Parameter(description = "目标 HLS 文件名称") String hlsPath) {
         Integer luserId = 0;
         hlsPath = hlsDirBasePath + hlsPath + ".m3u8";
 
@@ -66,7 +66,7 @@ public class FFmpegStreamController {
         try {
             String result = future.get();
             if ("true".equals(result)) {
-                return AjaxResult.success("HLS 流启动成功，播放路径: " + hlsPath);
+                return AjaxResult.success(hlsPath);
             } else {
                 FFmpegStreamHandler.stopFFmpeg(luserId);
                 return AjaxResult.error("启动流失败");

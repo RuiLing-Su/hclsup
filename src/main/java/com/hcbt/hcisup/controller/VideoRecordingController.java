@@ -79,7 +79,7 @@ public class VideoRecordingController {
      * @return 视频流
      */
     @GetMapping("/stream/{luserId}")
-    @Operation(summary = "获取实时检测结果视频流", description = "返回可通过VLC等播放器播放的MJPEG视频流")
+    @Operation(summary = "获取实时检测结果视频流", description = "返回MJPEG视频流，需要手动打开网址http://101.132.99.208:9090/recording/stream/0")
     public ResponseEntity<StreamingResponseBody> getDetectionVideoStream(@PathVariable("luserId") Integer luserId) {
         try {
             if (!frameDetectionProcessor.isProcessingUser(luserId)) {

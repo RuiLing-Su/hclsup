@@ -70,7 +70,7 @@ public class EHomeController {
     }
 
     //根据DeviceID获取lUserID
-    @RequestMapping(value ="getLUserId/{DeviceID}")
+    @GetMapping(value ="getLUserId/{DeviceID}")
     @Operation(summary = "根据DeviceID获取lUserId")
     public AjaxResult getLUserId(@PathVariable("DeviceID") String DeviceID)
     {

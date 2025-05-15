@@ -26,7 +26,7 @@ public class StreamingService {
     private FrameDetectionProcessor frameDetectionProcessor;
     private final String framesDirBasePath;
 
-    private static final int DEFAULT_FRAME_RATE = 10; // 默认帧率，每秒10帧
+    private static final int DEFAULT_FRAME_RATE = 1; // 默认帧率，每秒1帧
     private static final byte[] MJPEG_BOUNDARY_START = ("--frame\r\nContent-Type: image/jpeg\r\nContent-Length: ").getBytes();
     private static final byte[] MJPEG_BOUNDARY_END = "\r\n\r\n".getBytes();
 
