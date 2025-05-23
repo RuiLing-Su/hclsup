@@ -154,38 +154,54 @@ public class FFmpegStreamHandler {
         command.add("hevc"); // 输入格式为 H.265 裸流
         command.add("-i");
         command.add("pipe:0"); // 从标准输入读取数据
-        String framesDirPath = "/home/elitedatai/hclsup_java/yolo123/hls/image/" + luserId;
-        command.add("-filter_complex");
-        command.add("[0:v]split=2[vorig][vframes];[vframes]fps=1[vframes_out]"); // 分流并提取每秒一帧
-        command.add("-map");
-        command.add("[vorig]"); // HLS 输出流
+
+//        String framesDirPath = "/home/elitedatai/hclsup_java/yolo123/hls/image/" + luserId;
+//        command.add("-filter_complex");
+//        command.add("[0:v]split=2[vorig][vframes];[vframes]fps=1[vframes_out]"); // 分流并提取每秒一帧
+//        command.add("-map");
+//        command.add("[vorig]"); // HLS 输出流
+
+        command.add("-vf");
+        command.add("scale=640:360,fps=15"); // 缩放至 640x360 分辨率，帧率降至 15fps
+
         command.add("-c:v");
         command.add("libx264"); // 转码为 H.264
         command.add("-g");
-        command.add("50"); // 设置 GOP 大小为 50 帧
-        command.add("-keyint_min");
-        command.add("25"); // 最小关键帧间隔
+        command.add("30"); // GOP大小为 30 帧（2秒×15fps）
         command.add("-preset");
-        command.add("veryfast"); // 使用更快的预设以降低延迟
+        command.add("superfast"); // 使用更快的预设
         command.add("-tune");
         command.add("zerolatency"); // 优化实时流
+        command.add("-flags");
+        command.add("low_delay"); // 降低延迟
+        command.add("-strict");
+        command.add("-2"); // 支持实验性选项
         command.add("-an"); // 无音频
         command.add("-f");
         command.add("hls"); // 输出格式为 HLS
         command.add("-hls_time");
-        command.add("2"); // 每个分段2秒，降低延迟
+        command.add("2"); // 每个分段2秒
         command.add("-hls_list_size");
-        command.add("3"); // 播放列表保留3个分段
+        command.add("0"); // 保留所有分段（事件型播放列表）
         command.add("-hls_flags");
         command.add("delete_segments+append_list"); // 删除旧分段并支持动态追加
         command.add("-hls_segment_type");
         command.add("mpegts"); // 使用 MPEG-TS 分段
         command.add(hlsPath); // 目标 HLS 文件路径
-        command.add("-map");
-        command.add("[vframes_out]"); // 帧输出流
-        command.add("-f");
-        command.add("image2"); // 输出为图片
-        command.add(framesDirPath + "/frame_%04d.jpg"); // 帧保存路径
+//        command.add("-map");
+//        command.add("[vframes_out]"); // 帧输出流
+//        command.add("-f");
+//        command.add("image2"); // 输出为图片
+//        command.add(framesDirPath + "/frame_%04d.jpg"); // 帧保存路径
+
+
+        command.add("-b:v");
+        command.add("512k"); // 视频比特率控制
+
+        // 启用动态播放列表更新
+        command.add("-hls_playlist_type");
+        command.add("event");
+
         return command;
     }
 

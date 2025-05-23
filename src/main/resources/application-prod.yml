@@ -29,7 +29,9 @@ ehome:
 app:
   upload-dir: /home/elitedatai/hclsup_java/yolo123/uploads
   result-dir: /home/elitedatai/hclsup_java/yolo123/results
-  model-path: /home/elitedatai/hclsup_java/yolo123/model/yolov8n.onnx
+  models:
+    model-path-vest: /home/elitedatai/hclsup_java/yolo123/model/best.onnx
+    model-path-pedestrian: /home/elitedatai/hclsup_java/yolo123/model/yolov8n.onnx
   stream:
     hls-dir: /home/elitedatai/hclsup_java/yolo123/hls/
     frames-dir: /home/elitedatai/hclsup_java/yolo123/hls/image/

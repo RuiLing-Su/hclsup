@@ -13,23 +13,41 @@ import org.bytedeco.opencv.global.opencv_imgcodecs;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
 @Slf4j
 @Service
 public class DetectionService {
-    private final Inference inference;
+    private final Inference inferenceVest;
+    private final Inference inferencePedestrian;
     private final Path resultDir;
 
     public DetectionService(
-            @Value("${app.model-path}") String modelPath,
+            @Value("${app.models.model-path-vest}") String modelPathVest,
+            @Value("${app.models.model-path-pedestrian}") String modelPathPedestrian,
             @Value("${app.result-dir}") String resultDirPath) {
         this.resultDir = Paths.get(resultDirPath);
-        log.info("Attempting to load model from: " + modelPath);
-        this.inference = new Inference(modelPath, new Size(640, 640), false);
+        log.info("Loading vest model from: " + modelPathVest);
+        log.info("Loading pedestrian model from: " + modelPathPedestrian);
+        List<String> classesVest = loadClasses(modelPathVest.replace(".onnx", ".txt"));
+        List<String> classesPedestrian = loadClasses(modelPathPedestrian.replace(".onnx", ".txt"));
+        this.inferenceVest = new Inference(modelPathVest, new Size(640, 640), false, classesVest);
+        this.inferencePedestrian = new Inference(modelPathPedestrian, new Size(640, 640), false, classesPedestrian);
+    }
+
+    private List<String> loadClasses(String filePath) {
+        try {
+            log.info("Loading classes from: " + filePath);
+            return Files.readAllLines(Paths.get(filePath));
+        } catch (IOException e) {
+            throw new RuntimeException("无法读取类名文件: " + filePath, e);
+        }
     }
 
     /**
@@ -39,16 +57,29 @@ public class DetectionService {
      */
     public String detectImage(String imagePath) {
         // 加载图像
+        log.info("Loading image from: " + imagePath);
         Mat image = opencv_imgcodecs.imread(imagePath);
         if (image.empty()) {
             throw new RuntimeException("无法读取图像文件: " + imagePath);
         }
 
         // 运行对象检测
-        List<Detection> detections = inference.runInference(image);
+        List<Detection> detectionsVest = inferenceVest.runInference(image);
+        for (Detection d : detectionsVest) {
+            d.setColor(new Scalar(0, 255, 0, 0)); // 绿色用于安全背心
+        }
+
+        List<Detection> detectionsPedestrian = inferencePedestrian.runInference(image);
+        for (Detection d : detectionsPedestrian) {
+            d.setColor(new Scalar(255, 0, 0, 0)); // 蓝色用于行人
+        }
 
         // 在图像上绘制检测结果
-        drawDetections(image, detections);
+        List<Detection> allDetections = new ArrayList<>();
+        allDetections.addAll(detectionsVest);
+        allDetections.addAll(detectionsPedestrian);
+
+        drawDetections(image, allDetections);
 
         // 保存结果图像
         String originalFilename = Paths.get(imagePath).getFileName().toString();
@@ -96,10 +127,22 @@ public class DetectionService {
                     Mat mat = converter.convert(frame);
 
                     // 检测对象
-                    List<Detection> detections = inference.runInference(mat);
+                    List<Detection> detectionsVest = inferenceVest.runInference(mat);
+                    for (Detection d : detectionsVest) {
+                        d.setColor(new Scalar(0, 255, 0, 0)); // 绿色用于安全背心
+                    }
+
+                    List<Detection> detectionsPedestrian = inferencePedestrian.runInference(mat);
+                    for (Detection d : detectionsPedestrian) {
+                        d.setColor(new Scalar(255, 0, 0, 0)); // 蓝色用于行人
+                    }
+
+                    List<Detection> allDetections = new ArrayList<>();
+                    allDetections.addAll(detectionsVest);
+                    allDetections.addAll(detectionsPedestrian);
 
                     // 在帧上绘制检测结果
-                    drawDetections(mat, detections);
+                    drawDetections(mat, allDetections);
 
                     // 将处理后的帧写入输出视频
                     recorder.record(converter.convert(mat));
@@ -185,6 +228,9 @@ public class DetectionService {
     }
 
     public List<Detection> runInference(Mat image) {
-        return inference.runInference(image);
+        List<Detection> detectionsVest = inferenceVest.runInference(image);
+        List<Detection> detectionsPedestrian = inferencePedestrian.runInference(image);
+        detectionsVest.addAll(detectionsPedestrian);
+        return detectionsVest;
     }
 }

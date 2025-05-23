@@ -59,7 +59,7 @@ public class HandleStreamV2 {
 
     /**
      * 处理完整的帧数据
-     * 将累积的裸流数据发送到 WebSocket 或 FFmpeg
+     * 将累积的裸流数据发送到 FFmpeg
      */
     private void processCompleteFrame() {
         // 通过 FFmpeg 推送数据

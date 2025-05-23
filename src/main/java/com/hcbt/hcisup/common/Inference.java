@@ -23,28 +23,17 @@ public class Inference {
     private Size modelShape;
     private boolean cudaEnabled;
     private Net net;
-    private List<String> classes = List.of(
-            "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck", "boat",
-            "traffic light", "fire hydrant", "stop sign", "parking meter", "bench", "bird", "cat",
-            "dog", "horse", "sheep", "cow", "elephant", "bear", "zebra", "giraffe", "backpack",
-            "umbrella", "handbag", "tie", "suitcase", "frisbee", "skis", "snowboard", "sports ball",
-            "kite", "baseball bat", "baseball glove", "skateboard", "surfboard", "tennis racket",
-            "bottle", "wine glass", "cup", "fork", "knife", "spoon", "bowl", "banana", "apple",
-            "sandwich", "orange", "broccoli", "carrot", "hot dog", "pizza", "donut", "cake",
-            "chair", "couch", "potted plant", "bed", "dining table", "toilet", "tv", "laptop",
-            "mouse", "remote", "keyboard", "cell phone", "microwave", "oven", "toaster", "sink",
-            "refrigerator", "book", "clock", "vase", "scissors", "teddy bear", "hair drier",
-            "toothbrush"
-    );
+    private List<String> classes ;
     private float modelConfidenceThreshold = 0.25f;  // 模型输出置信度的阈值，低于此阈值的检测框将被过滤掉
     private float modelScoreThreshold = 0.45f;  // 模型输出得分的阈值，用于在非极大值抑制 (NMS) 之前过滤掉低得分的检测框
     private float modelNMSThreshold = 0.50f;  // 非极大值抑制 (NMS) 的 IoU 阈值，用于去除重叠度过高的冗余检测框
     private boolean letterBoxForSquare = true;  // 是否对输入图像进行 Letterbox 处理以适应方形模型输入
 
-    public Inference(String onnxModelPath, Size modelInputShape, boolean runWithCuda) {
+    public Inference(String onnxModelPath, Size modelInputShape, boolean runWithCuda, List<String> classes) {
         this.modelPath = onnxModelPath;
         this.modelShape = modelInputShape;
         this.cudaEnabled = runWithCuda;
+        this.classes = classes;
         loadOnnxNetwork();
     }
 

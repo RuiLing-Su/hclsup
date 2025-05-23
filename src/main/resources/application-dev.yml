@@ -39,8 +39,10 @@ ehome:
 app:
   upload-dir: C:\Users\Su180\IdeaProjects\yolocv\yolo123\uploads
   result-dir: C:\Users\Su180\IdeaProjects\yolocv\yolo123\results
-  model-path: C:\Users\Su180\IdeaProjects\yolocv\yolo123\src\main\resources\yolo-model\yolov8n.onnx
+  models:
+    model-path-vest: C:\Users\Su180\IdeaProjects\yolocv\yolo123\src\main\resources\yolo-model\best.onnx
+    model-path-pedestrian: C:\Users\Su180\IdeaProjects\yolocv\yolo123\src\main\resources\yolo-model\yolov8n.onnx
   stream:
-    hls-dir: C:\Users\Su180\IdeaProjects\yolocv\yolo123\hls\
-    frames-dir: C:\Users\Su180\IdeaProjects\yolocv\yolo123\hls\image\
+    hls-dir: C:\Users\Su180\IdeaProjects\yolocv\yolo123\hls
+    frames-dir: C:\Users\Su180\IdeaProjects\yolocv\yolo123\hls\image
     recording-dir: C:\Users\Su180\IdeaProjects\yolocv\yolo123\hls\recordings
