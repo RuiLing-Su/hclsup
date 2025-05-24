@@ -1,0 +1,59 @@
+
+ehome:
+  port: 9000
+  # 公网ip
+  pu-ip: 124.223.77.114
+  # 内网ip
+  in-ip: 10.0.4.13
+  # ehome5.0秘钥123456
+  secret-key: hik12345
+  # cms服务端口
+  cms-port: 7660
+  # 流媒体预览端口
+  sms-preview-port: 7662
+  # 流媒体回放端口
+  sms-back-port: 7661
+  # ss服务端口
+  ss-port: 6011
+  # ss文件保存路径
+  ss-filepath: /home/ubuntu/hc_isup/monitor/
+  # 回放视频存储地址
+  playBack-videoPath: /home/ubuntu/hc_isup/playBack_video/
+  Alarm:
+    # Alarm监听端口
+    Alarm-Tcp-port: 7663
+    Alarm-Udp-port: 7664
+    Alarm-Server-type: 2
+    EventInfoPrintType: file
+
+
+#app:
+#  upload-dir: /home/ubuntu/hc_isup/yolo123/uploads
+#  result-dir: /home/ubuntu/hc_isup/yolo123/results
+#  model-path: /home/ubuntu/hc_isup/yolo123/yolo-model/yolov5nu.onnx
+#  recording-dir: /home/ubuntu/hc_isup/yolo123/recordings
+#  stream:
+#    hls-dir: :/home/ubuntu/hclsup_java/SRS/hls/
+#    frames-dir: /home/ubuntu/hclsup_java/SRS/hls/image/
+
+#app:
+#  upload-dir: C:\Users\Su180\IdeaProjects\yolocv\yolo123\uploads
+#  result-dir: C:\Users\Su180\IdeaProjects\yolocv\yolo123\results
+#  models:
+#    model-path-vest: C:\Users\Su180\IdeaProjects\yolocv\yolo123\src\main\resources\yolo-model\best.onnx
+#    model-path-pedestrian: C:\Users\Su180\IdeaProjects\yolocv\yolo123\src\main\resources\yolo-model\yolov8n.onnx
+#  stream:
+#    hls-dir: C:\Users\Su180\IdeaProjects\yolocv\yolo123\hls
+#    frames-dir: C:\Users\Su180\IdeaProjects\yolocv\yolo123\hls\image
+#    recording-dir: C:\Users\Su180\IdeaProjects\yolocv\yolo123\hls\recordings
+
+app:
+  upload-dir: D:\SourceTreeWorkSpace\videoflow-config\uploads
+  result-dir: D:\SourceTreeWorkSpace\videoflow-config\results
+  models:
+    model-path-vest: D:\SourceTreeWorkSpace\videoflow-config\yolo-model\best.onnx
+    model-path-pedestrian: D:\SourceTreeWorkSpace\videoflow-config\yolo-model\yolov8n.onnx
+  stream:
+    hls-dir: D:\SourceTreeWorkSpace\videoflow-config\hls
+    frames-dir: D:\SourceTreeWorkSpace\videoflow-config\hls\image
+    recording-dir: D:\SourceTreeWorkSpace\videoflow-config\hls\recordings

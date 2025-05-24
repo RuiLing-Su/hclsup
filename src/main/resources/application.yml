@@ -1,0 +1,69 @@
+spring:
+  profiles:
+    active: prod # 默认激活 prod 环境
+  jackson:
+    # 返回格式化日期
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: GMT+8
+  mvc:
+    static-path-pattern: /**
+    async:
+      request-timeout: -1
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 100MB
+
+server:
+  port: ${ehome.port}
+
+ehome:
+  port: ${ehome.port}
+  # 公网ip
+  pu-ip: ${ehome.pu-ip}
+  # 内网ip
+  in-ip: ${ehome.in-ip}
+  # ehome5.0秘钥123456
+  secret-key: ${ehome.secret-key}
+  # cms服务端口
+  cms-port: ${ehome.cms-port}
+  # 流媒体预览端口
+  sms-preview-port: ${ehome.sms-preview-port}
+  # 流媒体回放端口
+  sms-back-port: ${ehome.sms-back-port}
+  # ss服务端口
+  ss-port: ${ehome.ss-port}
+  # ss文件保存路径
+  ss-filepath: ${ehome.ss-filepath}
+  # 回放视频存储地址
+  playBack-videoPath: ${ehome.playBack-videoPath}
+  Alarm:
+    # Alarm监听端口
+    Alarm-Tcp-port: ${ehome.Alarm.Alarm-Tcp-port}
+    Alarm-Udp-port: ${ehome.Alarm.Alarm-Udp-port}
+    Alarm-Server-type: ${ehome.Alarm.Alarm-Server-type}
+    EventInfoPrintType: ${ehome.Alarm.EventInfoPrintType}
+
+knife4j:
+  enable: true
+  openapi:
+    title: ISUP平台接口文档
+    description: 录像、推流等接口说明
+  setting:
+    language: zh_cn
+    enable-footer: false
+    enable-footer-custom: false
+    enable-version: true
+    enable-openapi: true
+    swagger-model-name: 接口文档
+    # 是否显示请求耗时
+    enable-request-time: true
+    # 是否显示界面中各类分组
+    enable-group: true
+
+app:
+  upload-dir: ${app.upload-dir}
+  result-dir: ${app.result-dir}
+  models: ${app.models}
+  stream: ${app.stream}
+
