@@ -63,7 +63,8 @@ public class FFmpegStreamHandler {
             }
 
             try {
-                String hlsPath = "/home/elitedatai/hclsup_java/yolo123/hls/stream_" + channel + ".m3u8";
+                String streamKey = luserId + "_" + channel;
+                String rtmpUrl = String.format("rtmp://%s:%d/live/%s", "101.132.99.208", 1935, streamKey);
                 log.info("用户 ID: {} 切换到通道: {}", luserId, channel);
 
                 // 检查 FFmpeg 是否可用
@@ -94,7 +95,8 @@ public class FFmpegStreamHandler {
                 userChannels.put(luserId, channel);
 
                 // 启动新的 FFmpeg 进程
-                return startFFmpegProcess(luserId, hlsPath, channel);
+                // return startFFmpegProcess(luserId, hlsPath, channel);
+                return startFFmpegProcess2(luserId, rtmpUrl, channel);
             } finally {
                 lock.unlock();
             }
@@ -119,6 +121,14 @@ public class FFmpegStreamHandler {
         log.warn("无法从路径 {} 提取通道号，使用默认处理", hlsPath);
         return startFFmpegProcess(luserId, hlsPath, 0);
     }
+
+    public static boolean startFFmpeg2(Integer luserId, Integer channel) {
+        if (channel > 0) {
+            return startFFmpegForChannel(luserId, channel);
+        }
+        return false;
+    }
+
 
     /**
      * 强制停止进程并清理所有资源
@@ -261,6 +271,33 @@ public class FFmpegStreamHandler {
             }
         }
     }
+    /**
+     * 启动 FFmpeg flv 进程的核心逻辑
+     */
+    private static boolean startFFmpegProcess2(Integer luserId, String rtmpUrl, int channel) {
+        try {
+            // 构建并启动 FFmpeg 命令
+            List<String> command = buildOptimizedFFmpegCommand2(rtmpUrl);
+            ProcessBuilder pb = new ProcessBuilder(command);
+            pb.redirectErrorStream(true);
+
+            log.info("启动 FFmpeg 推流进程，用户 ID: {}, 通道: {}", luserId, channel);
+
+            Process process = pb.start();
+            ffmpegProcesses.put(luserId, process);
+            ffmpegOutputStreams.put(luserId, process.getOutputStream());
+            runningFlags.put(luserId, new AtomicBoolean(true));
+            restartAttempts.put(luserId, 0);
+
+            // 启动监控线程
+            startMonitoringThreads2(luserId, process);
+
+            return true;
+        } catch (Exception e) {
+            log.error("启动 FFmpeg 推流失败，用户 ID: {}", luserId, e);
+            return false;
+        }
+    }
 
     /**
      * 启动 FFmpeg 进程的核心逻辑
@@ -377,6 +414,36 @@ public class FFmpegStreamHandler {
     }
 
     /**
+     * 构建优化的 FFmpeg （flv）命令
+     */
+    private static List<String> buildOptimizedFFmpegCommand2(String rtmpUrl) {
+        List<String> command = new ArrayList<>();
+        command.add("ffmpeg");
+
+        // 输入为裸 H.265 数据（HEVC），从管道读取
+        command.add("-f"); command.add("hevc");
+        command.add("-i"); command.add("pipe:0");
+
+        // 视频处理参数（转为 H.264）
+        // command.add("-vf"); command.add("scale=640:360,fps=15");
+        // command.add("-c:v"); command.add("libx264");
+        // command.add("-preset"); command.add("ultrafast");
+        // command.add("-tune"); command.add("zerolatency");
+        // command.add("-g"); command.add("30");
+        // command.add("-b:v"); command.add("512k");
+
+        // // 不转码，直接 copy 原始 H.265 数据
+        command.add("-c:v"); command.add("copy");
+        // 无音频（可根据需要添加 -f lavfi -i anullsrc）
+        command.add("-an");
+
+        // 输出为 RTMP（FLV 格式）
+        command.add("-f"); command.add("flv");
+        command.add(rtmpUrl); // e.g. rtmp://localhost/live/stream1
+
+        return command;
+    }
+    /**
      * 启动监控线程
      */
     private static void startMonitoringThreads(Integer luserId, Process process) {
@@ -404,6 +471,40 @@ public class FFmpegStreamHandler {
 
                 if (isProcessRunning(luserId)) {
                     handleProcessRestart(luserId);
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                log.warn("进程监控线程被中断，用户 ID: {}", luserId);
+            }
+        }, "FFmpeg-Monitor-" + luserId);
+        monitorThread.setDaemon(true);
+        monitorThread.start();
+    }
+    private static void startMonitoringThreads2(Integer luserId, Process process) {
+        // 输出日志线程
+        Thread logThread = new Thread(() -> {
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+                String line;
+                while ((line = reader.readLine()) != null && isProcessRunning(luserId)) {
+                    log.debug("FFmpeg [{}]: {}", luserId, line);
+                }
+            } catch (IOException e) {
+                if (isProcessRunning(luserId)) {
+                    log.error("读取 FFmpeg 输出失败: {}", e.getMessage());
+                }
+            }
+        }, "FFmpeg-Output-" + luserId);
+        logThread.setDaemon(true); // 设置为守护线程，避免进程退出时线程仍在运行
+        logThread.start();
+
+        // 进程监控线程
+        Thread monitorThread = new Thread(() -> {
+            try {
+                int exitCode = process.waitFor();
+                log.info("FFmpeg 进程退出，用户 ID: {}, 退出码: {}", luserId, exitCode);
+
+                if (isProcessRunning(luserId)) {
+                    handleProcessRestart2(luserId);
                 }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
@@ -448,6 +549,40 @@ public class FFmpegStreamHandler {
     }
 
     /**
+     * 处理进程重启
+     */
+    private static void handleProcessRestart2(Integer luserId) {
+        ReentrantLock lock = getUserLock(luserId);
+        if (lock.tryLock()) {
+            try {
+                int attempts = restartAttempts.getOrDefault(luserId, 0);
+                if (attempts < MAX_RESTART_ATTEMPTS) {
+                    log.warn("尝试重启 FFmpeg，用户 ID: {} (第 {}/{} 次)", luserId, attempts + 1, MAX_RESTART_ATTEMPTS);
+                    restartAttempts.put(luserId, attempts + 1);
+
+                    Integer channel = userChannels.get(luserId);
+                    if (channel != null) {
+                        // 确保清理完成后再重启
+                        cleanupChannelFiles(channel);
+                        waitForResourceCleanup();
+
+                        String streamKey = luserId + "_" + channel;
+                        String rtmpUrl = String.format("rtmp://%s:%d/live/%s", "101.132.99.208", 1935, streamKey);
+                        startFFmpegProcess2(luserId, rtmpUrl, channel);
+                    }
+                } else {
+                    log.error("达到最大重启尝试次数，用户 ID: {}", luserId);
+                    runningFlags.put(luserId, new AtomicBoolean(false));
+                }
+            } finally {
+                lock.unlock();
+            }
+        } else {
+            log.warn("无法获取用户锁进行重启，用户 ID: {}", luserId);
+        }
+    }
+
+    /**
      * 写入数据到 FFmpeg
      */
     public static void writeData(Integer luserId, byte[] data) {
@@ -472,7 +607,8 @@ public class FFmpegStreamHandler {
                     ReentrantLock lock = getUserLock(luserId);
                     if (lock.tryLock()) {
                         try {
-                            handleProcessRestart(luserId);
+                            // handleProcessRestart(luserId);
+                            handleProcessRestart2(luserId);
                         } finally {
                             lock.unlock();
                         }

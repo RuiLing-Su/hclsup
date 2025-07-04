@@ -1,4 +1,84 @@
+#  222.186.32.141
+#ehome:
+#  port: 9090
+#  # 公网ip
+#  pu-ip: 222.186.32.141
+#  # 内网ip
+#  in-ip: 192.168.1.116
+#  # ehome5.0秘钥123456
+#  secret-key: hik12345
+#  # cms服务端口
+#  cms-port: 7660
+#  # 流媒体预览端口
+#  sms-preview-port: 7662
+#  # 流媒体回放端口
+#  sms-back-port: 7661
+#  # ss服务端口
+#  ss-port: 6011
+#  # ss文件保存路径
+#  ss-filepath: /home/elitedatai/hclsup/monitor/
+#  # 回放视频存储地址
+#  playBack-videoPath: /home/elitedatai/hclsup/playBack_video/
+#  Alarm:
+#    # Alarm监听端口
+#    Alarm-Tcp-port: 7663
+#    Alarm-Udp-port: 7664
+#    Alarm-Server-type: 2
+#    EventInfoPrintType: file
+#
+#app: # 文件上传下载路径
+#  upload-dir: /home/elitedatai/hclsup/yolo123/uploads
+#  result-dir: /home/elitedatai/hclsup/yolo123/results
+#  models: # 模型文件路径
+#    model-path-vest: /home/elitedatai/hclsup/yolo123/model/best.onnx
+#    model-path-pedestrian: /home/elitedatai/hclsup/yolo123/model/yolov8n.onnx
+#  stream:
+#    hls-dir: /home/elitedatai/hclsup/yolo123/hls/
+#    frames-dir: /home/elitedatai/hclsup/yolo123/hls/image/     # 帧图像基础目录路径，
+#    recording-dir: /home/elitedatai/hclsup/yolo123/hls/recordings  #视频存放路径
+#
 
+#124.223.42.71
+#ehome:
+#  port: 9091
+#  # 公网ip
+#  pu-ip: 124.223.42.71
+#  # 内网ip
+#  in-ip: 10.0.4.2
+#  # ehome5.0秘钥123456
+#  secret-key: hik12345
+#  # cms服务端口
+#  cms-port: 7660
+#  # 流媒体预览端口
+#  sms-preview-port: 7662
+#  # 流媒体回放端口
+#  sms-back-port: 7661
+#  # ss服务端口
+#  ss-port: 6011
+#  # ss文件保存路径
+#  ss-filepath: /home/ubuntu/hclsup/monitor/
+#  # 回放视频存储地址
+#  playBack-videoPath: /home/ubuntu/hclsup/playBack_video/
+#  Alarm:
+#    # Alarm监听端口
+#    Alarm-Tcp-port: 7663
+#    Alarm-Udp-port: 7664
+#    Alarm-Server-type: 2
+#    EventInfoPrintType: file
+#
+#app: # 文件上传下载路径
+#  upload-dir: /home/ubuntu/hclsup/yolo123/uploads
+#  result-dir: /home/ubuntu/hclsup/yolo123/results
+#  models: # 模型文件路径
+#    model-path-vest: /home/ubuntu/hclsup/yolo123/model/best.onnx
+#    model-path-pedestrian: /home/ubuntu/hclsup/yolo123/model/yolov8n.onnx
+#  stream:
+#    hls-dir: /home/ubuntu/hclsup/yolo123/hls/
+#    frames-dir: /home/ubuntu/hclsup/yolo123/hls/image/     # 帧图像基础目录路径，
+#    recording-dir: /home/ubuntu/hclsup/yolo123/hls/recordings  #视频存放路径
+
+
+#101.132.99.208
 ehome:
   port: 9090
   # 公网ip
@@ -34,5 +114,5 @@ app:
     model-path-pedestrian: /home/elitedatai/hclsup_java/yolo123/model/yolov8n.onnx
   stream:
     hls-dir: /home/elitedatai/hclsup_java/yolo123/hls/
-    frames-dir: /home/elitedatai/hclsup_java/yolo123/hls/image/
-    recording-dir: /home/elitedatai/hclsup_java/yolo123/hls/recordings
+    frames-dir: /home/elitedatai/hclsup_java/yolo123/hls/image/     # 帧图像基础目录路径，
+    recording-dir: /home/elitedatai/hclsup_java/yolo123/hls/recordings  #

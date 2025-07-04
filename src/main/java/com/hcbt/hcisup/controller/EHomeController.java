@@ -55,14 +55,14 @@ public class EHomeController {
      */
     @PostMapping(value ="stopPushStream")
     @Operation(summary = "根据摄像头编号停止推流")
-    public AjaxResult stopPreviewDevice(@RequestParam("luserId") Integer luserId)
+    public AjaxResult stopPreviewDevice(@RequestParam("luserId") Integer luserId,@RequestParam("channel") Integer channel)
     {
-        Integer i = SMS.LuserIDandSessionMap.get(luserId);
+        Integer i = SMS.LuserIDandSessionMap.get(channel);
         if (i==null){
             return AjaxResult.error();
         }
         try {
-            sms.StopRealPlay(luserId,i,SMS.SessionIDAndPreviewHandleMap.get(i));
+            sms.StopRealPlay(luserId,channel,i,SMS.SessionIDAndPreviewHandleMap.get(i));
         }catch (Exception e){
             return AjaxResult.error();
         }

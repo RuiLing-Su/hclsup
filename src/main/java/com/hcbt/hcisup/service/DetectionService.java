@@ -52,9 +52,12 @@ public class DetectionService {
     // 加载类别
     private List<String> loadClasses(String filePath) {
         try {
+            // 记录日志
             log.info("Loading classes from: " + filePath);
+            // 读取文件中的所有行
             return Files.readAllLines(Paths.get(filePath));
         } catch (IOException e) {
+            // 抛出运行时异常
             throw new RuntimeException("无法读取类名文件: " + filePath, e);
         }
     }
@@ -67,35 +70,42 @@ public class DetectionService {
     public String detectImage(String imagePath) {
         // 加载图像
         log.info("Loading image from: " + imagePath);
+        // 使用 OpenCV 读取图像为 Mat 对象
         Mat image = opencv_imgcodecs.imread(imagePath);
         if (image.empty()) {
             throw new RuntimeException("无法读取图像文件: " + imagePath);
         }
 
-        // 运行对象检测
+        // 运行对象检测  调用安全背心模型执行推理，返回检测结果
         List<Detection> detectionsVest = inferenceVest.runInference(image);
+        // 给所有检测到的安全背心设置统一颜色（绿色）
         for (Detection d : detectionsVest) {
             d.setColor(new Scalar(0, 255, 0, 0)); // 绿色用于安全背心
         }
-
+        // 调用行人检测模型执行推理
         List<Detection> detectionsPedestrian = inferencePedestrian.runInference(image);
+        // 给所有检测到的行人设置统一颜色（蓝色）
         for (Detection d : detectionsPedestrian) {
             d.setColor(new Scalar(255, 0, 0, 0)); // 蓝色用于行人
         }
 
-        // 在图像上绘制检测结果
+        //  合并两个模型的所有检测结果  在图像上绘制检测结果
         List<Detection> allDetections = new ArrayList<>();
-        allDetections.addAll(detectionsVest);
-        allDetections.addAll(detectionsPedestrian);
-
+        allDetections.addAll(detectionsVest);           // 添加安全背心检测框
+        allDetections.addAll(detectionsPedestrian);     // 添加行人检测框
+        // 将所有检测结果绘制到原始图像上
         drawDetections(image, allDetections);
 
         // 保存结果图像
+        // 获取原始文件名（不含路径）
         String originalFilename = Paths.get(imagePath).getFileName().toString();
+        // 构建新的结果图像文件名（添加前缀 result_）
         String resultFilename = "result_" + originalFilename;
+        // 构建保存路径（使用 resultDir 目录）
         Path resultPath = resultDir.resolve(resultFilename);
+        // 使用 OpenCV 将绘制后的图像保存到文件系统
         opencv_imgcodecs.imwrite(resultPath.toString(), image);
-
+        // 返回生成的结果图像文件名
         return resultFilename;
     }
 
@@ -110,22 +120,23 @@ public class DetectionService {
         String outputPath = resultDir.resolve(resultFilename).toString();
 
         try (FFmpegFrameGrabber grabber = new FFmpegFrameGrabber(videoPath)) {
+            // 启动视频读取器（解码器）
             grabber.start();
 
-            // 获取视频参数
+            // 获取视频参数 视频的宽度、高度和帧率信息
             int width = grabber.getImageWidth();
             int height = grabber.getImageHeight();
             double frameRate = grabber.getVideoFrameRate();
 
-            // 创建视频写入器
+            // 创建视频写入器（编码器）
             FFmpegFrameRecorder recorder = new FFmpegFrameRecorder(outputPath, width, height);
-            recorder.setVideoCodec(org.bytedeco.ffmpeg.global.avcodec.AV_CODEC_ID_H264);
-            recorder.setFormat("mp4");
-            recorder.setFrameRate(frameRate);
-            recorder.setVideoBitrate(grabber.getVideoBitrate());
-            recorder.start();
+            recorder.setVideoCodec(org.bytedeco.ffmpeg.global.avcodec.AV_CODEC_ID_H264);  // 使用 H.264 编码
+            recorder.setFormat("mp4");  // 输出格式为 mp4
+            recorder.setFrameRate(frameRate); // 设置帧率
+            recorder.setVideoBitrate(grabber.getVideoBitrate());  // 设置码率为与原视频相同
+            recorder.start();  // 启动写入器
 
-            // 创建OpenCV帧转换器
+            // 创建OpenCV帧转换器  用于帧之间的 OpenCV 与 JavaCV 的转换
             OpenCVFrameConverter.ToMat converter = new OpenCVFrameConverter.ToMat();
 
             // 处理每一帧
@@ -170,7 +181,7 @@ public class DetectionService {
     }
 
     /**
-     * 在图像上绘制检测结果
+     * 在图像上绘制检测结果  包括边界框和标签。
      * @param image 图像
      * @param detections 检测结果列表
      */
@@ -179,16 +190,17 @@ public class DetectionService {
             log.warn("检测结果为空，跳过绘制");
             return;
         }
-
+        // 遍历每一个检测结果，绘制边界框和标签
         for (Detection detection : detections) {
             // 绘制边界框
             opencv_imgproc.rectangle(
-                    image,
-                    detection.getBox(),
-                    detection.getColor(),
-                    2,
-                    opencv_imgproc.LINE_8,
-                    0);
+                    image,                          // 目标图像
+                    detection.getBox(),             // 边界框（Rect）
+                    detection.getColor(),           // 边框颜色（已设置）
+                    2,                              // 边框粗细
+                    opencv_imgproc.LINE_8,          // 线型
+                    0                               // 偏移量
+            );
 
             // 准备标签文本
             String label = detection.getClassName() + ": " + String.format("%.2f", detection.getConfidence());
@@ -196,11 +208,12 @@ public class DetectionService {
             // 获取文本大小
             int[] baseLine = new int[1];
             Size labelSize = opencv_imgproc.getTextSize(
-                    label,
-                    opencv_imgproc.FONT_HERSHEY_SIMPLEX,
-                    0.6,
-                    1,
-                    baseLine);
+                    label,                          // 标签内容
+                    opencv_imgproc.FONT_HERSHEY_SIMPLEX, // 字体
+                    0.6,                            // 字体缩放
+                    1,                              // 线宽
+                    baseLine                        // 基线，用于计算文本对齐
+            );
 
             // 计算标签位置，确保不超出图像边界
             int x = Math.max(detection.getBox().x(), 0);
@@ -236,10 +249,12 @@ public class DetectionService {
         }
     }
 
-    // 运行推理
+    // 同时运行安全背心和行人检测模型，合并返回所有检测结果。 运行推理
     public List<Detection> runInference(Mat image) {
+        // 调用两个模型分别执行推理
         List<Detection> detectionsVest = inferenceVest.runInference(image);
         List<Detection> detectionsPedestrian = inferencePedestrian.runInference(image);
+        // 合并两个检测结果列表
         detectionsVest.addAll(detectionsPedestrian);
         return detectionsVest;
     }

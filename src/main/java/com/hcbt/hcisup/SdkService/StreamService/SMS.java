@@ -2,7 +2,6 @@ package com.hcbt.hcisup.SdkService.StreamService;
 
 import com.hcbt.hcisup.SdkService.CmsService.CMS;
 import com.hcbt.hcisup.SdkService.CmsService.HCISUPCMS;
-import com.hcbt.hcisup.common.FFmpegStreamHandler;
 import com.hcbt.hcisup.common.HandleStreamV2;
 import com.hcbt.hcisup.common.PlayBackStream;
 import com.hcbt.hcisup.common.osSelect;
@@ -11,6 +10,7 @@ import com.sun.jna.Native;
 import com.sun.jna.Pointer;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import ws.schild.jave.*;
@@ -43,7 +43,7 @@ public class SMS {
     // 预览相关映射
     public static Map<Integer, Integer> PreviewHandSAndSessionIDandMap = new HashMap<>(); // lLinkHandle -> SessionID
     public static Map<Integer, Integer> SessionIDAndPreviewHandleMap = new HashMap<>();  // SessionID -> lLinkHandle
-    public static Map<Integer, Integer> LuserIDandSessionMap = new HashMap<>();          // lUserID -> SessionID
+    public static Map<Integer, Integer> LuserIDandSessionMap = new HashMap<>();          // channel -> SessionID
 
     // 回放相关映射
     public static Map<Integer, Integer> BackLuserIDandSessionMap = new HashMap<>();
@@ -248,7 +248,7 @@ public class SMS {
             HCISUPSMS.NET_EHOME_PREVIEW_DATA_CB_PARAM struDataCB = new HCISUPSMS.NET_EHOME_PREVIEW_DATA_CB_PARAM();
             PreviewHandSAndSessionIDandMap.put(lLinkHandle, pNewLinkCBMsg.iSessionID);
             SessionIDAndPreviewHandleMap.put(pNewLinkCBMsg.iSessionID, lLinkHandle);
-
+            log.info("实时预览监听回调: " + lLinkHandle + ", " + pNewLinkCBMsg.iSessionID);
             if (fPREVIEW_DATA_CB_WIN == null) {
                 fPREVIEW_DATA_CB_WIN = new FPREVIEW_DATA_CB_WIN();
             }
@@ -276,6 +276,7 @@ public class SMS {
                         Integer sessionID = PreviewHandSAndSessionIDandMap.get(iPreviewHandle);
                         HandleStreamV2 handleStreamV2 = concurrentMap.get(sessionID);
                         if (handleStreamV2 != null) {
+                            log.debug("预览数据回调");
                             handleStreamV2.startProcessing(dataStream);
                         }
                     }
@@ -364,9 +365,9 @@ public class SMS {
      * @param completableFutureOne  异步完成标志
      */
     public void RealPlay(int luserID, int channel, CompletableFuture<String> completableFutureOne) {
-        if (LuserIDandSessionMap.containsKey(luserID)) {
+        if (LuserIDandSessionMap.containsKey(channel)) {
             log.error("禁止重复推流!");
-            completableFutureOne.complete("false");
+            completableFutureOne.complete("true");
             return;
         }
 
@@ -403,115 +404,75 @@ public class SMS {
         } else {
             log.info("CMS 向设备发送请求预览实时码流成功, sessionID: " + struPushInfoIn.lSessionID);
             completableFutureOne.complete("true");
-            LuserIDandSessionMap.put(luserID, struPushInfoIn.lSessionID);
-            concurrentMap.put(struPushInfoIn.lSessionID, new HandleStreamV2(luserID));
+            LuserIDandSessionMap.put(channel, struPushInfoIn.lSessionID);
+            concurrentMap.put(struPushInfoIn.lSessionID, new HandleStreamV2(luserID,channel));
         }
     }
+
 
     /**
-     * 开启预览(使用 FFmpeg)
+     * 开启预览（使用 FFmpeg）
+     *
+     * @param luserID               用户 ID
+     * @param channel               通道号
+     * @param dwStreamType        码流类型  0：主码流，1：子码流，2：第三码流，3：虚拟码流，4：双向语音码流
+     * @param completableFutureOne  异步完成标志
      */
-    public void RealPlayWithFFmpeg(Integer luserID, int channel, CompletableFuture<String> completableFutureOne) {
-        log.info("用户 ID: {} 请求切换到频道: {}", luserID, channel);
-
-        try {
-            // 获取当前会话信息
-            Integer currentSessionID = LuserIDandSessionMap.get(luserID);
-            Integer currentChannel = FFmpegStreamHandler.getCurrentChannel(luserID);
-
-            // 如果是相同频道，直接返回成功
-            if (currentChannel != null && currentChannel.equals(channel) && currentSessionID != null) {
-                log.info("用户 ID: {} 已在频道 {} 上，无需切换", luserID, channel);
-                completableFutureOne.complete("true");
-                return;
-            }
-
-            // 先停止旧的流（如果存在）
-            if (currentSessionID != null) {
-                log.info("停止用户 ID: {} 的旧流，SessionID: {}", luserID, currentSessionID);
-
-                // 停止 CMS 推流
-                try {
-                    CMS.hcISUPCMS.NET_ECMS_StopGetRealStream(luserID, currentSessionID);
-                } catch (Exception e) {
-                    log.warn("停止旧推流异常: {}", e.getMessage());
-                }
-
-                // 清理映射关系
-                concurrentMap.remove(currentSessionID);
-                LuserIDandSessionMap.remove(luserID);
-
-                // 等待资源释放
-                try {
-                    Thread.sleep(200);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                }
-            }
-
-            // 启动 FFmpeg 进程（会自动处理频道切换和清理）
-            if (!FFmpegStreamHandler.startFFmpegForChannel(luserID, channel)) {
-                log.error("启动 FFmpeg 失败，用户 ID: {}", luserID);
-                completableFutureOne.complete("false");
-                return;
-            }
-
-            // 请求新的流
-            HCISUPCMS.NET_EHOME_PREVIEWINFO_IN struPreviewIn = new HCISUPCMS.NET_EHOME_PREVIEWINFO_IN();
-            struPreviewIn.iChannel = channel;
-            struPreviewIn.dwLinkMode = 0; // TCP
-            struPreviewIn.dwStreamType = 0; // 主码流
-            struPreviewIn.struStreamSever.szIP = ehomePuIp.getBytes();
-            struPreviewIn.struStreamSever.wPort = ehomeSmsPreViewPort;
-            struPreviewIn.write();
-
-            HCISUPCMS.NET_EHOME_PREVIEWINFO_OUT struPreviewOut = new HCISUPCMS.NET_EHOME_PREVIEWINFO_OUT();
-            if (!CMS.hcISUPCMS.NET_ECMS_StartGetRealStream(luserID, struPreviewIn, struPreviewOut)) {
-                log.error("请求开始预览失败, 用户 ID: {}, 频道: {}, 错误码: {}",
-                        luserID, channel, CMS.hcISUPCMS.NET_ECMS_GetLastError());
-                FFmpegStreamHandler.stopFFmpeg(luserID);
-                completableFutureOne.complete("false");
-                return;
-            }
-            struPreviewOut.read();
-
-            // 设置推流参数
-            HCISUPCMS.NET_EHOME_PUSHSTREAM_IN struPushInfoIn = new HCISUPCMS.NET_EHOME_PUSHSTREAM_IN();
-            struPushInfoIn.read();
-            struPushInfoIn.dwSize = struPushInfoIn.size();
-            struPushInfoIn.lSessionID = struPreviewOut.lSessionID;
-            struPushInfoIn.write();
-
-            HCISUPCMS.NET_EHOME_PUSHSTREAM_OUT struPushInfoOut = new HCISUPCMS.NET_EHOME_PUSHSTREAM_OUT();
-            struPushInfoOut.read();
-            struPushInfoOut.dwSize = struPushInfoOut.size();
-            struPushInfoOut.write();
-
-            // 开始推流
-            if (!CMS.hcISUPCMS.NET_ECMS_StartPushRealStream(luserID, struPushInfoIn, struPushInfoOut)) {
-                log.error("CMS 向设备发送请求预览实时码流失败, 用户 ID: {}, 频道: {}, 错误码: {}",
-                        luserID, channel, CMS.hcISUPCMS.NET_ECMS_GetLastError());
-                FFmpegStreamHandler.stopFFmpeg(luserID);
-                completableFutureOne.complete("false");
-                return;
-            }
-
-            // 成功，更新映射关系
-            log.info("CMS 推流成功, sessionID: {}, 通道: {}", struPushInfoIn.lSessionID, channel);
-
-            HandleStreamV2 handler = new HandleStreamV2(luserID);
-            concurrentMap.put(struPushInfoIn.lSessionID, handler);
-            LuserIDandSessionMap.put(luserID, struPushInfoIn.lSessionID);
-
+    public void RealPlayWithFFmpeg(int luserID, int channel,int dwStreamType, CompletableFuture<String> completableFutureOne) {
+        // 检查用户是否已经开启预览
+        if (LuserIDandSessionMap.containsKey(channel)) {
+            log.warn("禁止重复推流!");
             completableFutureOne.complete("true");
+            return;
+        }
 
-        } catch (Exception e) {
-            log.error("RealPlayWithFFmpeg 执行异常，用户 ID: {}, 频道: {}", luserID, channel, e);
-            FFmpegStreamHandler.stopFFmpeg(luserID);
+        // 创建预览参数
+        HCISUPCMS.NET_EHOME_PREVIEWINFO_IN struPreviewIn = new HCISUPCMS.NET_EHOME_PREVIEWINFO_IN();
+        int streamChannel = Integer.parseInt(String.valueOf(channel).substring(0, String.valueOf(channel).length() - 2));
+        log.info("isup开启推流，流通道{}，码流类型{}",streamChannel,dwStreamType);
+        struPreviewIn.iChannel = streamChannel;
+        struPreviewIn.dwLinkMode = 0;
+        // 主码流为0 子码流为1
+        struPreviewIn.dwStreamType = dwStreamType;
+        struPreviewIn.struStreamSever.szIP = ehomePuIp.getBytes();
+        struPreviewIn.struStreamSever.wPort = ehomeSmsPreViewPort;
+        struPreviewIn.write();
+
+        // 调用 CMS 接口开始预览
+        HCISUPCMS.NET_EHOME_PREVIEWINFO_OUT struPreviewOut = new HCISUPCMS.NET_EHOME_PREVIEWINFO_OUT();
+        if (!CMS.hcISUPCMS.NET_ECMS_StartGetRealStream(luserID, struPreviewIn, struPreviewOut)) {
+            log.error("请求开始预览失败, 错误码: " + CMS.hcISUPCMS.NET_ECMS_GetLastError());
             completableFutureOne.complete("false");
+            return;
+        }
+        struPreviewOut.read();
+
+        // 创建推流参数
+        HCISUPCMS.NET_EHOME_PUSHSTREAM_IN struPushInfoIn = new HCISUPCMS.NET_EHOME_PUSHSTREAM_IN();
+        struPushInfoIn.read();
+        struPushInfoIn.dwSize = struPushInfoIn.size();
+        struPushInfoIn.lSessionID = struPreviewOut.lSessionID;
+        struPushInfoIn.write();
+
+        // 调用 CMS 接口开始推流
+        HCISUPCMS.NET_EHOME_PUSHSTREAM_OUT struPushInfoOut = new HCISUPCMS.NET_EHOME_PUSHSTREAM_OUT();
+        struPushInfoOut.read();
+        struPushInfoOut.dwSize = struPushInfoOut.size();
+        struPushInfoOut.write();
+
+        if (!CMS.hcISUPCMS.NET_ECMS_StartPushRealStream(luserID, struPushInfoIn, struPushInfoOut)) {
+            log.error("CMS 向设备发送请求预览实时码流失败, 错误码: " + CMS.hcISUPCMS.NET_ECMS_GetLastError());
+            completableFutureOne.complete("false");
+        } else {
+            log.info("CMS 向设备发送请求预览实时码流成功, sessionID: " + struPushInfoIn.lSessionID);
+            LuserIDandSessionMap.put(channel, struPushInfoIn.lSessionID);
+            // // 创建流处理对象
+            HandleStreamV2 handler = new HandleStreamV2(luserID,channel);
+            // 将流处理对象放入并发映射中
+            concurrentMap.put(struPushInfoIn.lSessionID, handler);
+            completableFutureOne.complete("true");
         }
     }
-
 
     /**
      * 停止预览
@@ -520,9 +481,9 @@ public class SMS {
      * @param sessionID      会话 ID
      * @Devices lPreviewHandle 预览句柄
      */
-    public void StopRealPlay(int luserID, int sessionID, int lPreviewHandle) {
-        if (!LuserIDandSessionMap.containsKey(luserID)) {
-            log.error("禁止重复停止推流!");
+    public void StopRealPlay(int luserID,int channel, int sessionID, int lPreviewHandle) {
+        if (!LuserIDandSessionMap.containsKey(channel)) {
+            log.warn("禁止重复停止推流!");
             return;
         }
 
@@ -536,9 +497,10 @@ public class SMS {
             return;
         }
 
-        concurrentMap.remove(sessionID);
+        HandleStreamV2 handler = concurrentMap.remove(sessionID);
+
         PreviewHandSAndSessionIDandMap.remove(lPreviewHandle);
-        LuserIDandSessionMap.remove(luserID);
+        LuserIDandSessionMap.remove(channel);
         SessionIDAndPreviewHandleMap.remove(sessionID);
 
         log.info("会话 " + sessionID + " 相关资源已被清空");

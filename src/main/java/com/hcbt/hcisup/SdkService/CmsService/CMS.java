@@ -271,8 +271,8 @@ public class CMS {
         String deviceID = lUserIdAndDeviceMap.get(String.valueOf(luserID));
         LUserIDMap.remove(deviceID);
         lUserIdAndDeviceMap.delete(String.valueOf(luserID));
-        //删除sms预览判断信息
-        SMS.LuserIDandSessionMap.remove(luserID);
+        //todo 删除sms预览判断信息
+        // SMS.LuserIDandSessionMap.remove(luserID);
     }
 
     //deviceID获取luserID

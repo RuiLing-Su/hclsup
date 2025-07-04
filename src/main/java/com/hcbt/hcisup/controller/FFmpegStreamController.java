@@ -13,6 +13,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
@@ -97,20 +98,23 @@ public class FFmpegStreamController {
     @PostMapping("/smartStream")
     @Operation(summary = "智能推流", description = "自动管理通道切换和超时关闭的推流服务")
     public AjaxResult smartStream(@RequestParam("channel") @Parameter(description = "通道号") Integer channel) {
+        Map<String, String> data = new HashMap<>();
         Integer luserId = 0; // 默认用户ID
-
+        data.put("code", "hevc");
         // 生成唯一的HLS路径
         String hlsFileName = "stream_" + channel;
         String hlsPath = hlsDirBasePath + hlsFileName + ".m3u8";
-
+        String streamKey = luserId + "_" + channel;
+        String flvUrl = String.format("http://%s:%d/live/%s.flv", "101.132.99.208", 18080, streamKey);
+        data.put("flvUrl", flvUrl);
         // 检查当前是否已有流在推送
         Integer currentChannel = userChannelMap.get(luserId);
 
         // 如果已经在推相同通道的流，则重置自动关闭计时器并直接返回成功
         if (currentChannel != null && currentChannel.equals(channel)) {
             // 重置自动关闭计时器
-            resetAutoCloseTimer(luserId);
-            return AjaxResult.success("继续使用现有流", hlsPath);
+            resetAutoCloseTimer(luserId,channel);
+            return AjaxResult.success("继续使用现有流", data);
         }
 
         // 检查FFmpeg是否已经在运行
@@ -118,14 +122,17 @@ public class FFmpegStreamController {
 
         // 如果FFmpeg未运行，则启动FFmpeg
         if (!ffmpegRunning) {
-            if (!FFmpegStreamHandler.startFFmpeg(luserId,  hlsPath)) {
+            // if (!FFmpegStreamHandler.startFFmpeg(luserId,  hlsPath)) {
+            //     return AjaxResult.error("启动 FFmpeg 失败");
+            // }
+            if (!FFmpegStreamHandler.startFFmpeg2(luserId,channel)) {
                 return AjaxResult.error("启动 FFmpeg 失败");
             }
         }
 
         // 启动 ISUP 流并处理结果
         CompletableFuture<String> future = new CompletableFuture<>();
-        sms.RealPlayWithFFmpeg(luserId, channel, future);
+        sms.RealPlayWithFFmpeg(luserId, channel, 0,future);
 
         try {
             String result = future.get();
@@ -134,10 +141,10 @@ public class FFmpegStreamController {
                 userChannelMap.put(luserId, channel);
 
                 // 设置自动关闭计时器
-                setupAutoCloseTimer(luserId);
+                setupAutoCloseTimer(luserId,channel);
 
-                Thread.sleep(8000);
-                return AjaxResult.success("流启动成功", hlsPath);
+                // Thread.sleep(8000);
+                return AjaxResult.success("流启动成功", data);
             } else {
                 if (!ffmpegRunning) {
                     FFmpegStreamHandler.stopFFmpeg(luserId);
@@ -159,10 +166,10 @@ public class FFmpegStreamController {
      */
     @PostMapping("/stopStream")
     @Operation(summary = "停止推流")
-    public AjaxResult stopRtspStream() {
+    public AjaxResult stopRtspStream(@RequestParam("channel") @Parameter(description = "通道号") Integer channel) {
         Integer luserId = 0;
 
-        boolean result = stopStreamInternal(luserId);
+        boolean result = stopStreamInternal(luserId,channel);
 
         if (result) {
             return AjaxResult.success("流已成功停止");
@@ -177,16 +184,16 @@ public class FFmpegStreamController {
      * @param luserId 用户ID
      * @return 是否成功停止
      */
-    private boolean stopStreamInternal(Integer luserId) {
+    private boolean stopStreamInternal(Integer luserId,Integer channel) {
         // 从映射中获取会话 ID
-        Integer sessionId = SMS.LuserIDandSessionMap.get(luserId);
+        Integer sessionId = SMS.LuserIDandSessionMap.get(channel);
         if (sessionId == null) {
             return false;
         }
 
         try {
             // 停止 ISUP 流并清理 FFmpeg 进程
-            sms.StopRealPlay(luserId, sessionId, SMS.SessionIDAndPreviewHandleMap.get(sessionId));
+            sms.StopRealPlay(luserId,channel, sessionId, SMS.SessionIDAndPreviewHandleMap.get(sessionId));
             FFmpegStreamHandler.stopFFmpeg(luserId);
             frameDetectionProcessor.stopDetection(luserId);
 
@@ -207,13 +214,13 @@ public class FFmpegStreamController {
      *
      * @param luserId 用户ID
      */
-    private void setupAutoCloseTimer(Integer luserId) {
+    private void setupAutoCloseTimer(Integer luserId,Integer channel) {
         // 先取消已有的计时器（如果存在）
         cancelAutoCloseTask(luserId);
 
         // 创建新的自动关闭任务
         ScheduledFuture<?> future = scheduledExecutor.schedule(() -> {
-            stopStreamInternal(luserId);
+            stopStreamInternal(luserId,channel);
         }, AUTO_CLOSE_TIMEOUT_MS, TimeUnit.MILLISECONDS);
 
         // 保存任务引用
@@ -225,12 +232,12 @@ public class FFmpegStreamController {
      *
      * @param luserId 用户ID
      */
-    private void resetAutoCloseTimer(Integer luserId) {
+    private void resetAutoCloseTimer(Integer luserId,Integer channel) {
         // 先取消已有的计时器
         cancelAutoCloseTask(luserId);
 
         // 创建新的自动关闭任务
-        setupAutoCloseTimer(luserId);
+        setupAutoCloseTimer(luserId,channel);
     }
 
     /**

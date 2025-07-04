@@ -9,11 +9,12 @@ import lombok.extern.slf4j.Slf4j;
  */
 @Slf4j
 public class HandleStreamV2 {
-
     // 存储拼接后的裸流数据
     private byte[] allEsBytes = null;
     // 用户 ID
     private final Integer luserId;
+    // 通道号
+    private Integer channel;
     // 是否正在处理流数据
     private boolean isProcessing = false;
     /**
@@ -21,8 +22,9 @@ public class HandleStreamV2 {
      *
      * @param luserId     用户 ID
      */
-    public HandleStreamV2(Integer luserId) {
+    public HandleStreamV2(Integer luserId,Integer channel) {
         this.luserId = luserId;
+        this.channel = channel;
     }
 
     /**
@@ -39,7 +41,7 @@ public class HandleStreamV2 {
         // 标记处理状态
         if (!isProcessing) {
             isProcessing = true;
-            log.debug("开始为用户 ID: {} 处理视频流", luserId);
+            log.debug("开始为用户: {} 处理通道:{}视频流", luserId,channel);
         }
 
         // 检查是否为 RTP 包（包头为 00 00 01 BA）
@@ -63,8 +65,9 @@ public class HandleStreamV2 {
      */
     private void processCompleteFrame() {
         // 通过 FFmpeg 推送数据
-        FFmpegStreamHandler.writeData(luserId, allEsBytes);
-        log.debug("通过 FFmpeg 推送裸流数据，用户 ID: {}", luserId);
+        ISUPStreamHandler.pushRaw(luserId, channel,allEsBytes);
+        // FFmpegStreamHandler.writeData(luserId, allEsBytes);
+        log.debug("通过 FFmpeg 推送裸流数据，用户 ID: {},通道号:{}", luserId,channel);
     }
 
     /**

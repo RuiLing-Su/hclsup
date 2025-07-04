@@ -26,11 +26,13 @@ import java.util.concurrent.Executors;
 public class FrameDetectionProcessor {
     @Autowired
     private DetectionService detectionService;
-
+    // 帧图像基础目录路径，
     private final String framesDirBasePath;
-
+    // 存储每个用户的检测执行线程池（单线程）
     private final ConcurrentHashMap<Integer, ExecutorService> detectionExecutors = new ConcurrentHashMap<>();
+    // 存储每个用户最新处理结果图像的路径
     private final ConcurrentHashMap<Integer, String> latestResultPaths = new ConcurrentHashMap<>();
+    // 存储每个用户上一次处理的帧文件名，用于避免重复处理
     private final ConcurrentHashMap<Integer, String> lastProcessedFrames = new ConcurrentHashMap<>();
 
     // 构造函数，注入framesDirBasePath

@@ -75,14 +75,16 @@ public class DetectionController {
     @GetMapping("/result")
     @Operation(summary = "获取结果图像文件")
     public ResponseEntity<byte[]> getResultImage(@RequestParam("filename") String filename) throws IOException {
+        // 构建结果图像的完整路径（目录 + 文件名）
         Path resultPath = resultDir.resolve(filename);
         File resultFile = resultPath.toFile();
 
         if (!resultFile.exists()) {
             return ResponseEntity.notFound().build();
         }
-
+        // 读取图像字节数据
         byte[] imageBytes = Files.readAllBytes(resultPath);
+        // 返回图像数据，设置响应类型为 JPEG 格式
         return ResponseEntity.ok()
                 .contentType(MediaType.IMAGE_JPEG)
                 .body(imageBytes);
