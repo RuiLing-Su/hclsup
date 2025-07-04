@@ -6,7 +6,7 @@ ehome:
   # 内网ip
   in-ip: 10.0.4.13
   # ehome5.0秘钥123456
-  secret-key: hik12345
+  secret-key: 123456
   # cms服务端口
   cms-port: 7660
   # 流媒体预览端口
